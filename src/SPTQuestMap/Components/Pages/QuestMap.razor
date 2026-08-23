@@ -19,6 +19,7 @@
             <section class="viewport @(State.InProgressExpanded ? "progress-panel-open" : null)" aria-label="@Localizer["graph.aria"]" @ref="ViewportElement">
                 <canvas id="graph" tabindex="0" aria-label="@Localizer["graph.canvasAria"]" @ref="CanvasElement"></canvas>
                 <InProgressDrawer State="@State" Localizer="@Localizer" ExpandedChanged="SetDrawerExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
+                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" MapFilterChanged="SetCatchUpMapFilterAsync" />
                 <div class="graph-actions" aria-label="@Localizer["graph.actionsAria"]">
                     <button type="button" title="@Localizer["zoom.in"]" @onclick="() => ZoomAsync(1.22)">+</button><button type="button" title="@Localizer["zoom.out"]" @onclick="() => ZoomAsync(1 / 1.22)">−</button>
                     <button type="button" @onclick="FitAsync">@Localizer["fit"]</button><button type="button" disabled="@(!State.CanFocusSelection || State.FocusedId == State.SelectedId)" @onclick="FocusAsync">@Localizer["focus"]</button>
@@ -174,6 +175,19 @@
     private Task SetSearchAsync(string value) => ChangeViewAsync(() => State.SetSearch(value));
     private Task SetTraderAsync(string value) => ChangeViewAsync(() => State.SetTraderFilter(value));
     private Task SetDrawerExpandedAsync(bool value) => ChangeViewAsync(() => State.SetInProgressExpanded(value));
+    // Catch-up panel state is Blazor-rendered and absent from QuestGraphUpdate, so it
+    // must not push a full graph payload over JS interop the way ChangeViewAsync does.
+    private async Task SetCatchUpExpandedAsync(bool value)
+    {
+        State.SetCatchUpExpanded(value);
+        await SaveSettingsAsync();
+    }
+
+    private async Task SetCatchUpMapFilterAsync(string value)
+    {
+        State.SetCatchUpMapFilter(value);
+        await SaveSettingsAsync();
+    }
 
     private async Task ChangeViewAsync(Action change)
     {
