@@ -79,6 +79,30 @@ public sealed class CatchUpRulesTests
     }
 
     [Test]
+    public void BuildChainGaps_DetectsGapHiddenByTiedMaxDepthOnADifferentBranch()
+    {
+        // Regression test for a real production bug: two profiles both completed a
+        // deep, unrelated quest ("shared-deep", depth 5) under the same trader, tying
+        // their old "max completed depth" at 6 for that trader. But the comparison
+        // profile also completed a much shallower quest on a separate branch
+        // ("branch-quest", depth 2) that the primary profile never even started.
+        // A depth-scalar comparison sees the tie and reports no gap; per-quest
+        // comparison correctly still finds the missing branch-quest.
+        var facts = new[]
+        {
+            new CatchUpQuestFact("shared-deep", "prapor", 5, PrimaryCompleted: true, ComparisonCompleted: true),
+            new CatchUpQuestFact("branch-quest", "prapor", 2, PrimaryCompleted: false, ComparisonCompleted: true),
+        };
+
+        var chains = CatchUpRules.BuildChainGaps(facts);
+
+        Assert.That(chains, Has.Count.EqualTo(1));
+        Assert.That(chains[0].TraderId, Is.EqualTo("prapor"));
+        Assert.That(chains[0].Gap, Is.EqualTo(1));
+        Assert.That(chains[0].NextQuests.Select(quest => quest.QuestId), Is.EqualTo(new[] { "branch-quest" }));
+    }
+
+    [Test]
     public void BuildChainGaps_CapsRecommendationsAtMaxQuestsPerChain()
     {
         var facts = Enumerable.Range(0, 10)

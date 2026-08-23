@@ -10,10 +10,19 @@ namespace SPTQuestMap.Core.Rules;
 public static class CatchUpRules
 {
     /// <summary>
-    /// Builds one <see cref="CatchUpChainGap"/> per trader that has quests, ordered by
-    /// how far behind the primary profile is (largest gap first). Traders where the
-    /// primary profile is level with or ahead of the comparison profile are omitted.
+    /// Builds one <see cref="CatchUpChainGap"/> per trader that has quests the
+    /// comparison profile completed and the primary profile hasn't, ordered by how
+    /// many such quests exist (largest gap first). Traders where the primary profile
+    /// has matched every comparison-completed quest are omitted.
     /// </summary>
+    /// <remarks>
+    /// Deliberately per-quest rather than a single "max completed depth" scalar per
+    /// trader: two profiles can tie on deepest-completed-quest for a trader while one
+    /// is still behind on a different branch of that same trader's tree (e.g. one
+    /// profile cleared a deep, unrelated questline while never starting an earlier,
+    /// shallower branch the other profile finished) — a depth comparison alone can't
+    /// see that gap since it collapses each profile's whole trader progress to one number.
+    /// </remarks>
     public static IReadOnlyList<CatchUpChainGap> BuildChainGaps(
         IReadOnlyCollection<CatchUpQuestFact> facts,
         int maxQuestsPerChain = 6)
@@ -22,31 +31,26 @@ public static class CatchUpRules
         foreach (var group in facts.GroupBy(fact => fact.TraderId, StringComparer.Ordinal))
         {
             var quests = group.ToArray();
-            var primaryDepth = MaxCompletedDepth(quests, fact => fact.PrimaryCompleted);
-            var comparisonDepth = MaxCompletedDepth(quests, fact => fact.ComparisonCompleted);
-            var gap = comparisonDepth - primaryDepth;
-            if (gap <= 0) continue;
-
-            var nextQuests = quests
-                .Where(fact => !fact.PrimaryCompleted && fact.Depth <= comparisonDepth)
+            var missing = quests
+                .Where(fact => fact.ComparisonCompleted && !fact.PrimaryCompleted)
                 .OrderBy(fact => fact.Depth)
                 .ThenBy(fact => fact.QuestId, StringComparer.Ordinal)
+                .ToArray();
+            if (missing.Length == 0) continue;
+
+            var nextQuests = missing
                 .Take(maxQuestsPerChain)
                 .Select(fact => new CatchUpQuestRecommendation(fact.QuestId, fact.Depth))
                 .ToArray();
 
-            chains.Add(new CatchUpChainGap(group.Key, primaryDepth, comparisonDepth, nextQuests));
+            var primaryCompletedCount = quests.Count(fact => fact.PrimaryCompleted);
+            var comparisonCompletedCount = quests.Count(fact => fact.ComparisonCompleted);
+            chains.Add(new CatchUpChainGap(group.Key, primaryCompletedCount, comparisonCompletedCount, missing.Length, nextQuests));
         }
 
         return chains
             .OrderByDescending(chain => chain.Gap)
             .ThenBy(chain => chain.TraderId, StringComparer.Ordinal)
             .ToArray();
-    }
-
-    private static int MaxCompletedDepth(IReadOnlyCollection<CatchUpQuestFact> quests, Func<CatchUpQuestFact, bool> completed)
-    {
-        var depths = quests.Where(completed).Select(fact => fact.Depth + 1).ToArray();
-        return depths.Length == 0 ? 0 : depths.Max();
     }
 }

@@ -12,7 +12,8 @@
 - **Scope:** the 2.0 feature scope is complete and remains frozen at the server-authoritative multi-map/task-location integration. Further 2.0 work is maintenance: verified regressions, compatibility corrections, and release servicing only. New feature work belongs in a separately approved post-2.0 scope.
 - **Blockers:** none.
 - **Next work:** no M8 or `ingame-ui` milestone work remains. Future work begins from `main` as post-2.0 maintenance or as a separately scoped compatibility/feature milestone.
-- **Current validation:** zero compiler warnings/errors; **91/91 shared-core tests** and **166/166 server/browser tests**.
+- **Post-2.0 in progress:** `catch-up-planner` branch adds the browser-only Compare Mode catch-up planner (trader gaps + shared-map ranking). Server/browser only; the native client and 2.0 release artifacts are untouched. See **Catch-up planner** under *Accepted browser behavior*.
+- **Current validation:** zero compiler warnings/errors; **99/99 shared-core tests** and **177/177 server/browser tests**.
 - **Current combined package:** `artifacts/release/SPT-QuestMap-2.0.0.zip`, 15 entries / 12 files, 832,549 bytes, SHA-256 `4C48F8B2C3D269F7116F2DD2A4EACA7DE3F1FA3BB398BACCD8C9ABDA7665BFA1`. Root inspection found zero escaping files, zero `.js`/`.ts` files, and only the four expected QuestMap project DLL entries. Package DLLs are client `CE60E9E5085530E80716372E75278431F157F8F2954C0EDBF374138ADE23D894` and server `7FD6993486F71A306C94479361921E2C1C7103DEF6E55C2C00C81F5DDA104BAB`.
 - **Last recorded automated deployment state:** the installed client/client Core were hash-matched at `CBE22CCCE45BD3FCE09855BDD01DE59B00E345A2B14557EC1D453F8F170FF209` and `4F3FC21968C4B40A17A957D0863A8D02840F25FA2A7FF40B723A442796B3E8FC`. The installed server DLL/Core remained `DFF278CE60F050070EC7C374C705BC86B15748F50CA53FB00C96DE8A367F6AF8` and `27724B9DC9A8E3A551B155A5205909D8ED59BCE42580B6829B4B4B5BD794C66D` because no restart command was supplied. This records the last automated local deployment only; the combined artifact above is the final M8 release evidence.
 
@@ -134,6 +135,28 @@ Rules:
 - Sanitized rich text supports the accepted safe HTML/Tarkov tag set; executable/embedded markup and event attributes are rejected.
 - `/questmap` remains intentionally unauthenticated and is safe only within the documented bind/exposure boundary.
 
+### Catch-up planner (post-2.0 addition, browser only)
+
+A Compare Mode side panel that answers two co-op questions. Both parts are pure logic in
+`SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `QuestChainDepthCalculator`), projected by
+`QuestMapPageState`; the native client is unchanged.
+
+- **Trader gaps.** Per trader, the quests the comparison profile has completed and the primary
+  profile has not, ranked by that missing count, listing the nearest ones by chain depth first.
+  The gap is deliberately a **per-quest set difference, not a max-completed-depth comparison**:
+  two profiles routinely tie on deepest-completed quest for a trader while still being behind
+  each other on different branches of that trader's tree, and a depth scalar cannot see that.
+  `CatchUpRulesTests.BuildChainGaps_DetectsGapHiddenByTiedMaxDepthOnADifferentBranch` pins this.
+- **Shared-map ranking.** Raidable maps ordered by how many quests *both* profiles still need a
+  raid for. `ReadyToFinish` is excluded because its objectives are already met and it only needs a
+  trader hand-in; the `no-location`, `transition`, and `any` pseudo-locations are excluded because
+  they are not places to raid (an "any map" quest contributes equally everywhere and cannot
+  differentiate maps). A quest counts once per map it can be worked on.
+- The panel's map filter narrows **trader gaps only**. The shared-map ranking always spans every
+  applicable quest, because that breakdown is what the filter is chosen from.
+- Panel expansion and map filter persist in browser storage; a restored filter naming a map absent
+  from the loaded profile pair is dropped rather than silently yielding an empty, unshowable filter.
+
 ## Accepted native Tasks behavior
 
 ### Workspaces
@@ -215,6 +238,7 @@ Do not regress these accepted design choices:
 - In Progress filters/sorts/expansion are incremental; table rows and artwork are reused.
 - `QuestAssetSpriteCache` is runtime-wide and limits local asset transport to eight outstanding requests, processing completed decode/callback work in bounded frame batches.
 - Main-menu warm-up is non-blocking and retry-safe. A Tasks screen joins the same in-flight request.
+- Catch-up planner inputs that depend only on topology/profiles — chain depths, per-quest display maps, trader lookup, and the shared-map ranking — are built once per `SetData` and cached on `QuestMapPageState`. Changing the panel's map filter must only re-rank trader gaps; do not restore a per-filter quest-graph depth pass or a per-map rescan of every quest. Catch-up panel state is absent from `QuestGraphUpdate`, so its handlers must not push a full graph payload over JS interop.
 
 Accepted observed scale:
 

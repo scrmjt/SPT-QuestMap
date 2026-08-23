@@ -25,6 +25,14 @@ public sealed class QuestMapPageState
     private Dictionary<string, QuestComparisonDto> _comparisonById = new(StringComparer.Ordinal);
     private readonly HashSet<string> _comparisonScopeIds = new(StringComparer.Ordinal);
 
+    // Catch-up inputs that depend only on the loaded topology/profiles, not on the
+    // panel's map filter. Cached so changing the filter re-ranks trader gaps without
+    // recomputing the quest-graph depths or the shared-map breakdown every time.
+    private QuestNodeDto[] _catchUpNodes = [];
+    private Dictionary<string, QuestMapReferenceDto[]> _catchUpNodeMaps = new(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, int> _catchUpDepths = new Dictionary<string, int>(StringComparer.Ordinal);
+    private Dictionary<string, QuestTraderDto> _catchUpTraders = new(StringComparer.Ordinal);
+
     public QuestTopologyDto? Topology { get; private set; }
     public ProfileStateDto? Profile { get; private set; }
     public ProfileStateDto? ComparisonProfile { get; private set; }
@@ -54,6 +62,9 @@ public sealed class QuestMapPageState
     public int DifferenceCount { get; private set; }
     public IReadOnlyList<CatchUpChainDto> CatchUpChains { get; private set; } = [];
     public bool CatchUpExpanded { get; private set; }
+    public string CatchUpMapFilter { get; private set; } = string.Empty;
+    public IReadOnlyList<QuestMapReferenceDto> CatchUpMaps { get; private set; } = [];
+    public IReadOnlyList<SharedMapRankingDto> SharedMapRankings { get; private set; } = [];
 
     public void ApplySettings(QuestMapSettings settings)
     {
@@ -66,12 +77,17 @@ public sealed class QuestMapPageState
         Search = settings.Search ?? string.Empty;
         TraderFilter = settings.TraderFilter ?? string.Empty;
         ComparisonFilter = settings.ComparisonFilter;
+        CatchUpExpanded = settings.CatchUpExpanded;
+        CatchUpMapFilter = settings.CatchUpMapFilter ?? string.Empty;
         _profileSettings.Clear();
         foreach (var pair in settings.Profiles ?? new Dictionary<string, QuestProfileUiSettings>()) _profileSettings[pair.Key] = pair.Value;
         _comparePairSettings.Clear();
         foreach (var pair in settings.ComparePairs ?? new Dictionary<string, QuestProfileUiSettings>()) _comparePairSettings[pair.Key] = pair.Value;
         RestoreCurrentProfileSettings();
         Recalculate();
+        // Settings can be applied either side of SetData; re-rank so a restored map
+        // filter takes effect when data is already loaded (no-op when it isn't).
+        BuildCatchUpChains();
     }
 
     public QuestMapSettings CaptureSettings(string? selectedProfileId, string language, string? comparisonProfileId = null, bool? compareEnabled = null)
@@ -84,6 +100,8 @@ public sealed class QuestMapPageState
             ComparisonProfileId = comparisonProfileId ?? ComparisonProfile?.ProfileId,
             ComparisonFilter = ComparisonFilter,
             DetailTextTab = DetailTextTab,
+            CatchUpExpanded = CatchUpExpanded,
+            CatchUpMapFilter = CatchUpMapFilter,
             ComparePairs = new Dictionary<string, QuestProfileUiSettings>(_comparePairSettings, StringComparer.Ordinal),
         };
     }
@@ -114,7 +132,7 @@ public sealed class QuestMapPageState
         _comparisonApplicable = comparisonProfile?.AllApplicableQuestIds.ToHashSet(StringComparer.Ordinal) ?? [];
         _applicable = _primaryApplicable.Concat(_comparisonApplicable).ToHashSet(StringComparer.Ordinal);
         BuildComparisons();
-        BuildCatchUpChains();
+        RebuildCatchUpModel();
         _incoming = GroupEdges(topology.Edges, edge => edge.TargetId);
         _outgoing = GroupEdges(topology.Edges, edge => edge.SourceId);
         RestoreCurrentProfileSettings();
@@ -128,6 +146,7 @@ public sealed class QuestMapPageState
     public void SetInProgressExpanded(bool value) => InProgressExpanded = value;
     public void SetComparisonFilter(QuestComparisonFilter value) { if (!FocusMode && CompareMode) ComparisonFilter = value; Recalculate(); }
     public void SetCatchUpExpanded(bool value) => CatchUpExpanded = value;
+    public void SetCatchUpMapFilter(string? value) { CatchUpMapFilter = value ?? string.Empty; BuildCatchUpChains(); }
     public void SetSearch(string? value) { Search = value ?? string.Empty; Recalculate(); }
     public void SetTraderFilter(string? value) { if (!FocusMode) TraderFilter = value ?? string.Empty; Recalculate(); }
 
@@ -498,29 +517,124 @@ public sealed class QuestMapPageState
         UpdateComparisonCounts(_comparisonById.Keys);
     }
 
+    /// <summary>
+    /// True when a quest still requires going into a raid. "ReadyToFinish" is
+    /// deliberately excluded: its objectives are already met, so it only needs a
+    /// trader hand-in and must not inflate the "play this map together" ranking.
+    /// </summary>
+    private static bool NeedsRaid(QuestStateDto? state) => state?.DisplayState is "Available" or "InProgress";
+
+    /// <summary>
+    /// Pseudo-locations that are not raidable maps. "Out of raid" and "transition" are
+    /// category labels rather than places, and an "any map" quest contributes equally
+    /// to every map, so none of them help answer "which map should we run together".
+    /// </summary>
+    private static bool IsRaidableMap(string mapId) =>
+        !mapId.Equals(QuestObjectiveMapRules.NoLocationFilterId, StringComparison.OrdinalIgnoreCase)
+        && !mapId.Equals(QuestObjectiveMapRules.TransitionFilterId, StringComparison.OrdinalIgnoreCase)
+        && !mapId.Equals(QuestObjectiveMapRules.AnyFilterId, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Recomputes the catch-up inputs that depend only on the loaded topology and
+    /// profiles. Called once per <see cref="SetData"/> so that changing the panel's
+    /// map filter does not repeat the quest-graph depth pass or the shared-map scan.
+    /// </summary>
+    private void RebuildCatchUpModel()
+    {
+        if (!CompareMode || Topology is null)
+        {
+            _catchUpNodes = [];
+            _catchUpNodeMaps = new Dictionary<string, QuestMapReferenceDto[]>(StringComparer.Ordinal);
+            _catchUpDepths = new Dictionary<string, int>(StringComparer.Ordinal);
+            _catchUpTraders = new Dictionary<string, QuestTraderDto>(StringComparer.Ordinal);
+            CatchUpChains = [];
+            CatchUpMaps = [];
+            SharedMapRankings = [];
+            return;
+        }
+
+        _catchUpDepths = QuestChainDepthCalculator.ComputeDepths(
+            Topology.Quests.Select(node => node.Id).ToArray(),
+            Topology.Edges.Select(edge => (edge.SourceId, edge.TargetId)).ToArray());
+
+        _catchUpNodes = Topology.Quests.Where(node => _applicable.Contains(node.Id)).ToArray();
+        _catchUpNodeMaps = _catchUpNodes.ToDictionary(
+            node => node.Id,
+            QuestMapLocationPresentation.DisplayMaps,
+            StringComparer.Ordinal);
+        _catchUpTraders = Topology.Traders.ToDictionary(trader => trader.Id, StringComparer.Ordinal);
+
+        CatchUpMaps = _catchUpNodeMaps.Values
+            .SelectMany(maps => maps)
+            .GroupBy(map => map.Id, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(map => map.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        // A restored filter can name a map this profile pair has no quests on. Drop it
+        // rather than silently showing zero gaps against a filter the dropdown can't show.
+        if (CatchUpMapFilter.Length > 0 && !CatchUpMaps.Any(map => map.Id == CatchUpMapFilter))
+        {
+            CatchUpMapFilter = string.Empty;
+        }
+
+        BuildSharedMapRankings();
+        BuildCatchUpChains();
+    }
+
+    /// <summary>
+    /// Ranks raidable maps by how many quests both profiles still need a raid for
+    /// there. Independent of <see cref="CatchUpMapFilter"/> — this breakdown is what
+    /// the filter is chosen from, so it always spans every applicable quest.
+    /// </summary>
+    private void BuildSharedMapRankings()
+    {
+        var facts = new List<SharedMapQuestFact>();
+        foreach (var node in _catchUpNodes)
+        {
+            var primaryNeedsRaid = NeedsRaid(GetQuestState(node.Id));
+            var comparisonNeedsRaid = NeedsRaid(GetComparisonQuestState(node.Id));
+            foreach (var map in _catchUpNodeMaps[node.Id])
+            {
+                if (!IsRaidableMap(map.Id)) continue;
+                facts.Add(new SharedMapQuestFact(node.Id, map.Id, map.Name, primaryNeedsRaid, comparisonNeedsRaid));
+            }
+        }
+
+        var banners = _catchUpNodeMaps.Values
+            .SelectMany(maps => maps)
+            .GroupBy(map => map.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().BannerImageUrl, StringComparer.Ordinal);
+
+        SharedMapRankings = SharedMapRules.BuildRanking(facts)
+            .Select(ranking => new SharedMapRankingDto(
+                ranking.MapId,
+                ranking.MapName,
+                banners.GetValueOrDefault(ranking.MapId),
+                ranking.Count,
+                ranking.QuestIds.Select(id => _nodeById.GetValueOrDefault(id)?.Name ?? id).ToArray()))
+            .ToArray();
+    }
+
     private void BuildCatchUpChains()
     {
         if (!CompareMode || Topology is null) { CatchUpChains = []; return; }
 
-        var depths = QuestChainDepthCalculator.ComputeDepths(
-            Topology.Quests.Select(node => node.Id).ToArray(),
-            Topology.Edges.Select(edge => (edge.SourceId, edge.TargetId)).ToArray());
-
-        var facts = Topology.Quests
-            .Where(node => _applicable.Contains(node.Id))
+        var facts = _catchUpNodes
+            .Where(node => string.IsNullOrEmpty(CatchUpMapFilter)
+                || _catchUpNodeMaps[node.Id].Any(map => map.Id == CatchUpMapFilter))
             .Select(node => new CatchUpQuestFact(
                 node.Id,
                 node.TraderId,
-                depths.GetValueOrDefault(node.Id),
+                _catchUpDepths.GetValueOrDefault(node.Id),
                 GetQuestState(node.Id)?.DisplayState == "Completed",
                 GetComparisonQuestState(node.Id)?.DisplayState == "Completed"))
             .ToArray();
 
-        var traderMeta = Topology.Traders.ToDictionary(trader => trader.Id, StringComparer.Ordinal);
         CatchUpChains = CatchUpRules.BuildChainGaps(facts)
             .Select(gap =>
             {
-                var trader = traderMeta.GetValueOrDefault(gap.TraderId);
+                var trader = _catchUpTraders.GetValueOrDefault(gap.TraderId);
                 var nextQuests = gap.NextQuests.Select(recommendation =>
                 {
                     var node = _nodeById.GetValueOrDefault(recommendation.QuestId);
@@ -532,7 +646,7 @@ public sealed class QuestMapPageState
                         state?.DisplayState ?? "Locked",
                         state?.Blockers ?? []);
                 }).ToArray();
-                return new CatchUpChainDto(gap.TraderId, trader?.Name ?? gap.TraderId, trader?.ImageUrl, gap.PrimaryDepth, gap.ComparisonDepth, gap.Gap, nextQuests);
+                return new CatchUpChainDto(gap.TraderId, trader?.Name ?? gap.TraderId, trader?.ImageUrl, gap.PrimaryCompletedCount, gap.ComparisonCompletedCount, gap.Gap, nextQuests);
             })
             .ToArray();
     }
@@ -648,6 +762,8 @@ public sealed record QuestMapSettings(string? SelectedProfileId, string? Languag
     public string? ComparisonProfileId { get; init; }
     public QuestComparisonFilter ComparisonFilter { get; init; }
     public QuestDetailTextTab DetailTextTab { get; init; }
+    public bool CatchUpExpanded { get; init; }
+    public string? CatchUpMapFilter { get; init; } = string.Empty;
     public IReadOnlyDictionary<string, QuestProfileUiSettings>? ComparePairs { get; init; } = new Dictionary<string, QuestProfileUiSettings>();
     public static QuestMapSettings Default { get; } = new(null, null, false, true, true, false, string.Empty, string.Empty, new Dictionary<string, QuestProfileUiSettings>());
 }
