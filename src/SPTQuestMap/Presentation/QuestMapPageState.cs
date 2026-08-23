@@ -1,5 +1,7 @@
 using SPTQuestMap.Services;
 using System.Text.Json.Serialization;
+using SPTQuestMap.Core.Models;
+using SPTQuestMap.Core.Rules;
 using CoreQuestGraphRules = SPTQuestMap.Core.Rules.QuestGraphRules;
 using QuestTraderOrder = SPTQuestMap.Core.Rules.QuestTraderOrder;
 
@@ -50,6 +52,8 @@ public sealed class QuestMapPageState
     public IReadOnlyDictionary<QuestDifferenceCategory, int> ComparisonCounts { get; private set; } = new Dictionary<QuestDifferenceCategory, int>();
     public int ComparableQuestCount { get; private set; }
     public int DifferenceCount { get; private set; }
+    public IReadOnlyList<CatchUpChainDto> CatchUpChains { get; private set; } = [];
+    public bool CatchUpExpanded { get; private set; }
 
     public void ApplySettings(QuestMapSettings settings)
     {
@@ -110,6 +114,7 @@ public sealed class QuestMapPageState
         _comparisonApplicable = comparisonProfile?.AllApplicableQuestIds.ToHashSet(StringComparer.Ordinal) ?? [];
         _applicable = _primaryApplicable.Concat(_comparisonApplicable).ToHashSet(StringComparer.Ordinal);
         BuildComparisons();
+        BuildCatchUpChains();
         _incoming = GroupEdges(topology.Edges, edge => edge.TargetId);
         _outgoing = GroupEdges(topology.Edges, edge => edge.SourceId);
         RestoreCurrentProfileSettings();
@@ -122,6 +127,7 @@ public sealed class QuestMapPageState
     public void SetLevelEligibleOnly(bool value) { if (!FocusMode) LevelEligibleOnly = value; Recalculate(); }
     public void SetInProgressExpanded(bool value) => InProgressExpanded = value;
     public void SetComparisonFilter(QuestComparisonFilter value) { if (!FocusMode && CompareMode) ComparisonFilter = value; Recalculate(); }
+    public void SetCatchUpExpanded(bool value) => CatchUpExpanded = value;
     public void SetSearch(string? value) { Search = value ?? string.Empty; Recalculate(); }
     public void SetTraderFilter(string? value) { if (!FocusMode) TraderFilter = value ?? string.Empty; Recalculate(); }
 
@@ -490,6 +496,45 @@ public sealed class QuestMapPageState
         }
 
         UpdateComparisonCounts(_comparisonById.Keys);
+    }
+
+    private void BuildCatchUpChains()
+    {
+        if (!CompareMode || Topology is null) { CatchUpChains = []; return; }
+
+        var depths = QuestChainDepthCalculator.ComputeDepths(
+            Topology.Quests.Select(node => node.Id).ToArray(),
+            Topology.Edges.Select(edge => (edge.SourceId, edge.TargetId)).ToArray());
+
+        var facts = Topology.Quests
+            .Where(node => _applicable.Contains(node.Id))
+            .Select(node => new CatchUpQuestFact(
+                node.Id,
+                node.TraderId,
+                depths.GetValueOrDefault(node.Id),
+                GetQuestState(node.Id)?.DisplayState == "Completed",
+                GetComparisonQuestState(node.Id)?.DisplayState == "Completed"))
+            .ToArray();
+
+        var traderMeta = Topology.Traders.ToDictionary(trader => trader.Id, StringComparer.Ordinal);
+        CatchUpChains = CatchUpRules.BuildChainGaps(facts)
+            .Select(gap =>
+            {
+                var trader = traderMeta.GetValueOrDefault(gap.TraderId);
+                var nextQuests = gap.NextQuests.Select(recommendation =>
+                {
+                    var node = _nodeById.GetValueOrDefault(recommendation.QuestId);
+                    var state = GetQuestState(recommendation.QuestId);
+                    return new CatchUpQuestDto(
+                        recommendation.QuestId,
+                        node?.Name ?? recommendation.QuestId,
+                        recommendation.Depth,
+                        state?.DisplayState ?? "Locked",
+                        state?.Blockers ?? []);
+                }).ToArray();
+                return new CatchUpChainDto(gap.TraderId, trader?.Name ?? gap.TraderId, trader?.ImageUrl, gap.PrimaryDepth, gap.ComparisonDepth, gap.Gap, nextQuests);
+            })
+            .ToArray();
     }
 
     private void UpdateComparisonCounts(IEnumerable<string> ids)

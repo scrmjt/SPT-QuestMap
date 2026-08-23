@@ -135,6 +135,8 @@ public sealed record QuestMapClientTopologyFeedDto(
     IReadOnlyDictionary<string, string[]> PrerequisiteBlockerIds,
     IReadOnlyDictionary<string, string> QuestSummaries,
     IReadOnlyDictionary<string, QuestMetaInfoDto> QuestMetaInfo);
+public sealed record CatchUpQuestDto(string QuestId, string Name, int Depth, string DisplayState, QuestBlockerDto[] Blockers);
+public sealed record CatchUpChainDto(string TraderId, string TraderName, string? TraderImageUrl, int PrimaryDepth, int ComparisonDepth, int Gap, IReadOnlyList<CatchUpQuestDto> NextQuests);
 public sealed record QuestMapClientRepeatableFeedDto(
     string StaticTopologyVersion,
     QuestNodeDto[] ProfileGeneratedQuests,

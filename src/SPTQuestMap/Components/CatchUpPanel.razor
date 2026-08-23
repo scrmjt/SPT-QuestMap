@@ -1,0 +1,42 @@
+@if (State.CompareMode)
+{
+    <aside class="catchup-panel @(State.CatchUpExpanded ? "expanded" : null)" aria-label="@Localizer["catchup.title"]">
+        <button class="catchup-toggle" type="button" aria-expanded="@State.CatchUpExpanded.ToString().ToLowerInvariant()" title="@Localizer["catchup.title"]" @onclick="() => ExpandedChanged.InvokeAsync(!State.CatchUpExpanded)">
+            <span class="catchup-title">@Localizer["catchup.title"]</span><span class="catchup-chevron" aria-hidden="true">@(State.CatchUpExpanded ? "›" : "‹")</span>
+        </button>
+        <div class="catchup-content">
+            @if (State.CatchUpChains.Count == 0)
+            {
+                <p class="catchup-empty">@Localizer["catchup.none"]</p>
+            }
+            @foreach (var chain in State.CatchUpChains)
+            {
+                <section class="catchup-chain">
+                    <div class="catchup-trader">
+                        <img src="@(chain.TraderImageUrl ?? "/files/trader/avatar/unknown.png")" alt="">
+                        <strong>@chain.TraderName</strong>
+                        <span class="catchup-gap" title="@Localizer.Format("catchup.gap.detail", ("primary", chain.PrimaryDepth), ("comparison", chain.ComparisonDepth))">@Localizer.Format("catchup.gap", ("count", chain.Gap))</span>
+                    </div>
+                    <ol class="catchup-quests">
+                        @foreach (var quest in chain.NextQuests)
+                        {
+                            <li class="catchup-quest @(quest.QuestId == State.SelectedId ? "selected" : null)">
+                                <button type="button" @onclick="() => QuestSelected.InvokeAsync(quest.QuestId)">
+                                    <span class="catchup-quest-name">@quest.Name</span>
+                                    <span class="catchup-quest-state">@(Localizer[$"state.{quest.DisplayState}"])</span>
+                                </button>
+                            </li>
+                        }
+                    </ol>
+                </section>
+            }
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestMapPageState State { get; set; } = default!;
+    [Parameter, EditorRequired] public QuestMapLocalizer Localizer { get; set; } = default!;
+    [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+    [Parameter] public EventCallback<string> QuestSelected { get; set; }
+}
