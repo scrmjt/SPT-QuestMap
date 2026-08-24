@@ -23,6 +23,23 @@
             </button>
         }
     </div>
+    @{ var maps = State.FilterMaps(); }
+    @if (maps.Count > 0)
+    {
+        <div class="filter-separator" aria-hidden="true"></div>
+        <div class="map-options @(State.FocusMode ? "disabled" : null)" role="radiogroup" aria-label="@Localizer["map.label"]">
+            <button class="map-option @(State.MapFilter.Length == 0 ? "selected" : null)" type="button" role="radio" aria-checked="@(State.MapFilter.Length == 0 ? "true" : "false")" title="@Localizer["map.all"]" disabled="@State.FocusMode" @onclick="() => MapChanged.InvokeAsync(string.Empty)">
+                <span>@Localizer["map.allShort"]</span>
+            </button>
+            @foreach (var map in maps)
+            {
+                var mapSelected = map.Id == State.MapFilter;
+                <button class="map-option @(mapSelected ? "selected" : null)" type="button" role="radio" aria-checked="@mapSelected.ToString().ToLowerInvariant()" title="@map.Name" disabled="@State.FocusMode" @onclick="() => MapChanged.InvokeAsync(map.Id)">
+                    <span>@map.Name</span>
+                </button>
+            }
+        </div>
+    }
 </div>
 @if (State.CompareMode)
 {
@@ -48,6 +65,7 @@
     [Parameter] public EventCallback<QuestComparisonFilter> ComparisonFilterChanged { get; set; }
     [Parameter] public EventCallback<string> SearchChanged { get; set; }
     [Parameter] public EventCallback<string> TraderChanged { get; set; }
+    [Parameter] public EventCallback<string> MapChanged { get; set; }
 
     private Task OnSearchInput(ChangeEventArgs args) => SearchChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
 

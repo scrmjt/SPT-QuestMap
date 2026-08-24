@@ -47,11 +47,15 @@ A Compare Mode side panel (browser only — the native BepInEx client is untouch
    profile hasn't, ranked by that count, nearest-by-chain-depth first.
 2. **Shared-map ranking** — which raidable maps have the most quests *both* profiles still need
    a raid for, i.e. the best maps to run together.
-3. A **map filter** over the trader gaps, plus persistence of the panel's expanded state and filter.
+3. **Chain progress** — per named quest series (Gunsmith, Spa Tour…), how far each player has
+   advanced, one bar per player, sorted by biggest disagreement first.
+4. A **global map filter** in the top filter bar beside the traders, narrowing the graph *and*
+   the panel, plus persistence of it and the panel's expanded state.
 
-Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`,
+Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `QuestSeriesRules`,
 `QuestChainDepthCalculator`) and is projected into DTOs by
-`QuestMapPageState.RebuildCatchUpModel` / `BuildSharedMapRankings` / `BuildCatchUpChains`.
+`QuestMapPageState.RebuildCatchUpModel` / `BuildSharedMapRankings` / `BuildCatchUpChains` /
+`BuildSeriesProgress`.
 
 ### Design decisions that must not be undone
 
@@ -65,8 +69,21 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`,
 - **`no-location`, `transition`, and `any` are excluded from the shared-map ranking** — they are
   not places to raid. An "any map" quest contributes equally to every map and so cannot
   differentiate them. They remain valid *filter* options, which is a deliberate asymmetry.
-- **The map filter narrows trader gaps only.** The shared-map ranking always spans every
-  applicable quest, because that ranking is what the user picks the filter from.
+- **The map filter narrows trader gaps and the graph, never the shared-map ranking.** That
+  ranking always spans every applicable quest, because it is what the user picks the filter from.
+- **The map filter is applied in the app layer, not in Core's `QuestVisibilityRules`.**
+  `QuestVisibilityNode` carries no location data, and this filter is browser-only — the native
+  client has its own location controls. Do not widen the shared Core record for it.
+- **Series grouping matches the *shape* of a quest name, never the English word "Part".**
+  Names are localized: `Gunsmith - Part 1` / `Büchsenmacher - Teil 1` / `Armurier - Partie 1`,
+  and **Russian uses a period**: `Оружейник. Часть 1`. The regex in `QuestSeriesRules` was
+  validated against all 17 installed locales (~180 matches, ~50 series each) with zero false
+  positives in English. An English-only pattern silently breaks every other locale.
+- **Series position is the highest completed part, over the whole series.** Not a count of
+  completed parts, and not restricted to the filtered map — the question is "where is this player
+  in the chain", so the denominator must stay stable as the map filter changes.
+- Only ~30% of quests (167/558) belong to a named series; the rest are standalone and appear
+  only in the trader-gap list. That is a known limit of name-based grouping, not a bug.
 - **Catch-up inputs are cached per `SetData`, not recomputed per filter change**, and catch-up
   panel handlers must not call `ChangeViewAsync` — that pushes the whole `QuestGraphUpdate`
   (every visible quest id + every comparison) over JS interop, and no catch-up field is in it.
@@ -74,7 +91,7 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`,
 ## Verification status
 
 - Full solution builds in Release with **zero warnings** (`TreatWarningsAsErrors` is on).
-- **99/99** shared-core tests, **177/177** server/browser tests.
+- **114/114** shared-core tests, **179/179** server/browser tests.
 - Verified against the real Woulf/ScramJet profiles on the running server: 4 trader gaps
   (was 0 before the fix), and a shared-map ranking topped by Streets of Tarkov (10), Customs (7),
   Lighthouse (7).
@@ -85,7 +102,13 @@ For anything ranking/filtering real quest data, check the live output before cal
 
 ## Not done / open
 
-- Not committed — everything is working-tree changes on `catch-up-planner`.
+- The map filter + chain-progress work is **uncommitted** working-tree changes on
+  `catch-up-planner` (the earlier catch-up work is committed as `8454592`). `pr/catch-up-planner`
+  is a clean single-commit branch off `upstream/main` **predating** this work — regenerate it from
+  the final state before opening a PR.
+- Remotes: `origin` = `scrmjt/SPT-QuestMap` (the user's fork, push-safe), `upstream` =
+  `rootdarkarchon/SPT-QuestMap`. Nothing has been pushed yet.
+- UI is mid-iteration; the user is still reviewing the panel layout.
 - No PR opened. **Upstream's `docs/development-status.md` declares the 2.0 scope frozen and says
   new features need separately approved post-2.0 scope — raise an issue/discussion with the
   maintainer before opening a PR.**

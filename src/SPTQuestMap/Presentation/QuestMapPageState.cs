@@ -25,11 +25,15 @@ public sealed class QuestMapPageState
     private Dictionary<string, QuestComparisonDto> _comparisonById = new(StringComparer.Ordinal);
     private readonly HashSet<string> _comparisonScopeIds = new(StringComparer.Ordinal);
 
+    // Every loaded quest's display maps, resolved once per SetData. DisplayMaps
+    // allocates per call and is needed by the graph filter, the catch-up panel and the
+    // series view, so it must not be recomputed on each filter change.
+    private Dictionary<string, QuestMapReferenceDto[]> _nodeMaps = new(StringComparer.Ordinal);
+
     // Catch-up inputs that depend only on the loaded topology/profiles, not on the
-    // panel's map filter. Cached so changing the filter re-ranks trader gaps without
+    // map filter. Cached so changing the filter re-ranks trader gaps without
     // recomputing the quest-graph depths or the shared-map breakdown every time.
     private QuestNodeDto[] _catchUpNodes = [];
-    private Dictionary<string, QuestMapReferenceDto[]> _catchUpNodeMaps = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, int> _catchUpDepths = new Dictionary<string, int>(StringComparer.Ordinal);
     private Dictionary<string, QuestTraderDto> _catchUpTraders = new(StringComparer.Ordinal);
 
@@ -62,9 +66,9 @@ public sealed class QuestMapPageState
     public int DifferenceCount { get; private set; }
     public IReadOnlyList<CatchUpChainDto> CatchUpChains { get; private set; } = [];
     public bool CatchUpExpanded { get; private set; }
-    public string CatchUpMapFilter { get; private set; } = string.Empty;
-    public IReadOnlyList<QuestMapReferenceDto> CatchUpMaps { get; private set; } = [];
+    public string MapFilter { get; private set; } = string.Empty;
     public IReadOnlyList<SharedMapRankingDto> SharedMapRankings { get; private set; } = [];
+    public IReadOnlyList<QuestSeriesProgressDto> SeriesProgress { get; private set; } = [];
 
     public void ApplySettings(QuestMapSettings settings)
     {
@@ -78,7 +82,7 @@ public sealed class QuestMapPageState
         TraderFilter = settings.TraderFilter ?? string.Empty;
         ComparisonFilter = settings.ComparisonFilter;
         CatchUpExpanded = settings.CatchUpExpanded;
-        CatchUpMapFilter = settings.CatchUpMapFilter ?? string.Empty;
+        MapFilter = settings.MapFilter ?? string.Empty;
         _profileSettings.Clear();
         foreach (var pair in settings.Profiles ?? new Dictionary<string, QuestProfileUiSettings>()) _profileSettings[pair.Key] = pair.Value;
         _comparePairSettings.Clear();
@@ -88,6 +92,7 @@ public sealed class QuestMapPageState
         // Settings can be applied either side of SetData; re-rank so a restored map
         // filter takes effect when data is already loaded (no-op when it isn't).
         BuildCatchUpChains();
+        BuildSeriesProgress();
     }
 
     public QuestMapSettings CaptureSettings(string? selectedProfileId, string language, string? comparisonProfileId = null, bool? compareEnabled = null)
@@ -101,7 +106,7 @@ public sealed class QuestMapPageState
             ComparisonFilter = ComparisonFilter,
             DetailTextTab = DetailTextTab,
             CatchUpExpanded = CatchUpExpanded,
-            CatchUpMapFilter = CatchUpMapFilter,
+            MapFilter = MapFilter,
             ComparePairs = new Dictionary<string, QuestProfileUiSettings>(_comparePairSettings, StringComparer.Ordinal),
         };
     }
@@ -131,6 +136,13 @@ public sealed class QuestMapPageState
         _primaryApplicable = profile?.AllApplicableQuestIds.Concat(_repeatableIds).ToHashSet(StringComparer.Ordinal) ?? [];
         _comparisonApplicable = comparisonProfile?.AllApplicableQuestIds.ToHashSet(StringComparer.Ordinal) ?? [];
         _applicable = _primaryApplicable.Concat(_comparisonApplicable).ToHashSet(StringComparer.Ordinal);
+        _nodeMaps = _nodeById.Values.ToDictionary(
+            node => node.Id,
+            QuestMapLocationPresentation.DisplayMaps,
+            StringComparer.Ordinal);
+        // A restored filter can name a map the loaded profiles have no quests on. Drop
+        // it rather than filtering everything away against an unselectable option.
+        if (MapFilter.Length > 0 && !FilterMaps().Any(map => map.Id == MapFilter)) MapFilter = string.Empty;
         BuildComparisons();
         RebuildCatchUpModel();
         _incoming = GroupEdges(topology.Edges, edge => edge.TargetId);
@@ -146,7 +158,14 @@ public sealed class QuestMapPageState
     public void SetInProgressExpanded(bool value) => InProgressExpanded = value;
     public void SetComparisonFilter(QuestComparisonFilter value) { if (!FocusMode && CompareMode) ComparisonFilter = value; Recalculate(); }
     public void SetCatchUpExpanded(bool value) => CatchUpExpanded = value;
-    public void SetCatchUpMapFilter(string? value) { CatchUpMapFilter = value ?? string.Empty; BuildCatchUpChains(); }
+    public void SetMapFilter(string? value)
+    {
+        if (FocusMode) return;
+        MapFilter = value ?? string.Empty;
+        Recalculate();
+        BuildCatchUpChains();
+        BuildSeriesProgress();
+    }
     public void SetSearch(string? value) { Search = value ?? string.Empty; Recalculate(); }
     public void SetTraderFilter(string? value) { if (!FocusMode) TraderFilter = value ?? string.Empty; Recalculate(); }
 
@@ -217,6 +236,23 @@ public sealed class QuestMapPageState
             .Where(trader => questTraderIds.Contains(trader.Id))
             .OrderBy(trader => ranks.GetValueOrDefault(trader.Id, int.MaxValue))
             .ThenBy(trader => trader.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Every location the map filter can select, ordered for display. Includes the
+    /// "out of raid", "any" and "transition" pseudo-locations: unlike the shared-map
+    /// ranking, which answers "where should we raid", filtering by them is meaningful.
+    /// </summary>
+    public IReadOnlyList<QuestMapReferenceDto> FilterMaps()
+    {
+        if (Topology is null) return [];
+        return _nodeMaps
+            .Where(entry => _applicable.Contains(entry.Key))
+            .SelectMany(entry => entry.Value)
+            .GroupBy(map => map.Id, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(map => map.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
 
@@ -310,6 +346,13 @@ public sealed class QuestMapPageState
                     FocusedId,
                     ShowRepeatables));
             VisibleIds.UnionWith(sharedVisible);
+            // Applied here rather than inside the shared Core rules: QuestVisibilityNode
+            // carries no location data, and the map filter is browser-only — the native
+            // client has its own location controls.
+            if (!FocusMode && MapFilter.Length > 0)
+            {
+                VisibleIds.RemoveWhere(id => id != SelectedId && !PrerequisiteIds.Contains(id) && !MatchesMapFilter(id));
+            }
             UpdateComparisonCounts([]);
             return;
         }
@@ -320,6 +363,7 @@ public sealed class QuestMapPageState
         var search = Search.Trim();
         var focusMode = FocusIds is not null;
         var trader = focusMode ? string.Empty : TraderFilter;
+        var mapUnfiltered = focusMode || MapFilter.Length == 0;
         var showFinished = focusMode || ShowFinished;
         var levelOnly = !focusMode && LevelEligibleOnly;
 
@@ -333,6 +377,7 @@ public sealed class QuestMapPageState
             if (!showFinished && !revealFinished && IsFinishedForEveryApplicableProfile(node, id)) return;
             if (!selected && levelOnly && IsLevelGatedForEveryApplicableProfile(id)) return;
             if (!selected && trader.Length > 0 && node.TraderId != trader && !PrerequisiteIds.Contains(id)) return;
+            if (!selected && !mapUnfiltered && !MatchesMapFilter(node) && !PrerequisiteIds.Contains(id)) return;
             if (!selected && search.Length > 0 && !$"{node.Name} {node.TraderName} {node.Id}".Contains(search, StringComparison.OrdinalIgnoreCase)) return;
             if (CompareMode) _comparisonScopeIds.Add(id);
             if (CompareMode && !focusMode && !selectionContext && !MatchesComparisonFilter(id)) return;
@@ -544,11 +589,10 @@ public sealed class QuestMapPageState
         if (!CompareMode || Topology is null)
         {
             _catchUpNodes = [];
-            _catchUpNodeMaps = new Dictionary<string, QuestMapReferenceDto[]>(StringComparer.Ordinal);
             _catchUpDepths = new Dictionary<string, int>(StringComparer.Ordinal);
             _catchUpTraders = new Dictionary<string, QuestTraderDto>(StringComparer.Ordinal);
             CatchUpChains = [];
-            CatchUpMaps = [];
+            SeriesProgress = [];
             SharedMapRankings = [];
             return;
         }
@@ -558,33 +602,68 @@ public sealed class QuestMapPageState
             Topology.Edges.Select(edge => (edge.SourceId, edge.TargetId)).ToArray());
 
         _catchUpNodes = Topology.Quests.Where(node => _applicable.Contains(node.Id)).ToArray();
-        _catchUpNodeMaps = _catchUpNodes.ToDictionary(
-            node => node.Id,
-            QuestMapLocationPresentation.DisplayMaps,
-            StringComparer.Ordinal);
         _catchUpTraders = Topology.Traders.ToDictionary(trader => trader.Id, StringComparer.Ordinal);
-
-        CatchUpMaps = _catchUpNodeMaps.Values
-            .SelectMany(maps => maps)
-            .GroupBy(map => map.Id, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .OrderBy(map => map.Name, StringComparer.Ordinal)
-            .ToArray();
-
-        // A restored filter can name a map this profile pair has no quests on. Drop it
-        // rather than silently showing zero gaps against a filter the dropdown can't show.
-        if (CatchUpMapFilter.Length > 0 && !CatchUpMaps.Any(map => map.Id == CatchUpMapFilter))
-        {
-            CatchUpMapFilter = string.Empty;
-        }
 
         BuildSharedMapRankings();
         BuildCatchUpChains();
+        BuildSeriesProgress();
     }
 
     /// <summary>
+    /// How far each profile has advanced through every named quest series that has a
+    /// quest on the selected map (or anywhere, when no map is selected). Positions are
+    /// measured over the whole series, not just its quests on that map, so a player's
+    /// place in a chain stays comparable as the map filter changes.
+    /// </summary>
+    private void BuildSeriesProgress()
+    {
+        if (!CompareMode)
+        {
+            SeriesProgress = [];
+            return;
+        }
+
+        var onFilteredMap = _catchUpNodes
+            .Where(MatchesMapFilter)
+            .Select(node => node.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Series membership spans every applicable quest so the denominator is the
+        // whole chain; the map filter only decides which series are worth showing.
+        var facts = new List<QuestSeriesFact>();
+        var seriesOnMap = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in _catchUpNodes)
+        {
+            if (!QuestSeriesRules.TryParse(node.Name, out var seriesName, out var part)) continue;
+            if (onFilteredMap.Contains(node.Id)) seriesOnMap.Add(seriesName);
+            facts.Add(new QuestSeriesFact(
+                node.Id,
+                seriesName,
+                part,
+                GetQuestState(node.Id)?.DisplayState == "Completed",
+                GetComparisonQuestState(node.Id)?.DisplayState == "Completed"));
+        }
+
+        SeriesProgress = QuestSeriesRules.BuildProgress(facts)
+            .Where(entry => seriesOnMap.Contains(entry.SeriesName))
+            .Select(entry => new QuestSeriesProgressDto(
+                entry.SeriesName,
+                entry.TotalParts,
+                entry.PrimaryFurthest,
+                entry.ComparisonFurthest))
+            .ToArray();
+    }
+
+    /// <summary>True when no map is selected, or the quest can be worked on that map.</summary>
+    private bool MatchesMapFilter(QuestNodeDto node) => MatchesMapFilter(node.Id);
+
+    private bool MatchesMapFilter(string questId) =>
+        MapFilter.Length == 0
+        || (_nodeMaps.TryGetValue(questId, out var maps) && maps.Any(map => map.Id == MapFilter));
+
+    /// <summary>
     /// Ranks raidable maps by how many quests both profiles still need a raid for
-    /// there. Independent of <see cref="CatchUpMapFilter"/> — this breakdown is what
+    /// there. Independent of <see cref="MapFilter"/> — this breakdown is what
     /// the filter is chosen from, so it always spans every applicable quest.
     /// </summary>
     private void BuildSharedMapRankings()
@@ -594,14 +673,14 @@ public sealed class QuestMapPageState
         {
             var primaryNeedsRaid = NeedsRaid(GetQuestState(node.Id));
             var comparisonNeedsRaid = NeedsRaid(GetComparisonQuestState(node.Id));
-            foreach (var map in _catchUpNodeMaps[node.Id])
+            foreach (var map in _nodeMaps[node.Id])
             {
                 if (!IsRaidableMap(map.Id)) continue;
                 facts.Add(new SharedMapQuestFact(node.Id, map.Id, map.Name, primaryNeedsRaid, comparisonNeedsRaid));
             }
         }
 
-        var banners = _catchUpNodeMaps.Values
+        var banners = _nodeMaps.Values
             .SelectMany(maps => maps)
             .GroupBy(map => map.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().BannerImageUrl, StringComparer.Ordinal);
@@ -621,8 +700,7 @@ public sealed class QuestMapPageState
         if (!CompareMode || Topology is null) { CatchUpChains = []; return; }
 
         var facts = _catchUpNodes
-            .Where(node => string.IsNullOrEmpty(CatchUpMapFilter)
-                || _catchUpNodeMaps[node.Id].Any(map => map.Id == CatchUpMapFilter))
+            .Where(MatchesMapFilter)
             .Select(node => new CatchUpQuestFact(
                 node.Id,
                 node.TraderId,
@@ -696,7 +774,7 @@ public sealed class QuestMapPageState
 
     private string ViewportScope() => Topology is null || Profile is null
         ? string.Empty
-        : string.Join('|', Topology.Version, Profile.ProfileId, ComparisonProfile?.ProfileId ?? string.Empty, ShowAllFuture ? 1 : 0, ShowFinished ? 1 : 0, ShowRepeatables && !CompareMode ? 1 : 0, LevelEligibleOnly ? 1 : 0, CompareMode ? ComparisonFilter : QuestComparisonFilter.AllQuests, TraderFilter, Search.Trim(), FocusedId ?? string.Empty, SelectedId ?? string.Empty);
+        : string.Join('|', Topology.Version, Profile.ProfileId, ComparisonProfile?.ProfileId ?? string.Empty, ShowAllFuture ? 1 : 0, ShowFinished ? 1 : 0, ShowRepeatables && !CompareMode ? 1 : 0, LevelEligibleOnly ? 1 : 0, CompareMode ? ComparisonFilter : QuestComparisonFilter.AllQuests, TraderFilter, MapFilter, Search.Trim(), FocusedId ?? string.Empty, SelectedId ?? string.Empty);
 
     private void CaptureCurrentProfileSettings()
     {
@@ -763,7 +841,7 @@ public sealed record QuestMapSettings(string? SelectedProfileId, string? Languag
     public QuestComparisonFilter ComparisonFilter { get; init; }
     public QuestDetailTextTab DetailTextTab { get; init; }
     public bool CatchUpExpanded { get; init; }
-    public string? CatchUpMapFilter { get; init; } = string.Empty;
+    public string? MapFilter { get; init; } = string.Empty;
     public IReadOnlyDictionary<string, QuestProfileUiSettings>? ComparePairs { get; init; } = new Dictionary<string, QuestProfileUiSettings>();
     public static QuestMapSettings Default { get; } = new(null, null, false, true, true, false, string.Empty, string.Empty, new Dictionary<string, QuestProfileUiSettings>());
 }

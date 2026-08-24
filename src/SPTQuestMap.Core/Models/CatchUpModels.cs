@@ -28,3 +28,12 @@ public sealed record SharedMapQuestFact(string QuestId, string MapId, string Map
 /// together, largest shared count first.
 /// </summary>
 public sealed record SharedMapRanking(string MapId, string MapName, int Count, IReadOnlyList<string> QuestIds);
+
+/// <summary>One numbered entry in a named quest series, with each profile's completion of it.</summary>
+public sealed record QuestSeriesFact(string QuestId, string SeriesName, int Part, bool PrimaryCompleted, bool ComparisonCompleted);
+
+/// <summary>
+/// How far each profile has advanced through one named series. Positions are the
+/// highest completed part number; 0 means the series has not been started.
+/// </summary>
+public sealed record QuestSeriesProgress(string SeriesName, int TotalParts, int PrimaryFurthest, int ComparisonFurthest);

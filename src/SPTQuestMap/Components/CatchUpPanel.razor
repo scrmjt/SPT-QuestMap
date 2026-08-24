@@ -5,18 +5,22 @@
             <span class="catchup-title">@Localizer["catchup.title"]</span><span class="catchup-chevron" aria-hidden="true">@(State.CatchUpExpanded ? "›" : "‹")</span>
         </button>
         <div class="catchup-content">
-            @if (State.CatchUpMaps.Count > 0)
+            @if (State.SeriesProgress.Count > 0)
             {
-                <label class="catchup-map-filter">
-                    <span>@Localizer["catchup.mapFilter"]</span>
-                    <select value="@State.CatchUpMapFilter" @onchange="@(e => MapFilterChanged.InvokeAsync((string?)e.Value ?? string.Empty))">
-                        <option value="">@Localizer["catchup.mapFilter.all"]</option>
-                        @foreach (var map in State.CatchUpMaps)
-                        {
-                            <option value="@map.Id">@map.Name</option>
-                        }
-                    </select>
-                </label>
+                <h4 class="catchup-section-title">@Localizer["catchup.series.title"]</h4>
+                <ol class="catchup-series">
+                    @foreach (var series in State.SeriesProgress)
+                    {
+                        <li class="catchup-series-item @(series.PrimaryFurthest == series.ComparisonFurthest ? "level" : null)">
+                            <div class="catchup-series-header">
+                                <strong>@series.SeriesName</strong>
+                                <span class="catchup-series-total">/@series.TotalParts</span>
+                            </div>
+                            @RenderSeriesRow(State.Profile?.Nickname ?? "A", series.PrimaryFurthest, series.TotalParts, "primary")
+                            @RenderSeriesRow(State.ComparisonProfile?.Nickname ?? "B", series.ComparisonFurthest, series.TotalParts, "comparison")
+                        </li>
+                    }
+                </ol>
             }
             @if (State.CatchUpChains.Count == 0)
             {
@@ -73,5 +77,12 @@
     [Parameter, EditorRequired] public QuestMapLocalizer Localizer { get; set; } = default!;
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
     [Parameter] public EventCallback<string> QuestSelected { get; set; }
-    [Parameter] public EventCallback<string> MapFilterChanged { get; set; }
+
+    private RenderFragment RenderSeriesRow(string who, int furthest, int total, string role) => @<div class="catchup-series-row @role">
+        <span class="catchup-series-who">@who</span>
+        <span class="catchup-series-bar" role="img" aria-label="@(furthest == 0 ? Localizer["catchup.series.notStarted"] : $"{furthest} / {total}")">
+            <span class="catchup-series-fill" style="width:@(total > 0 ? furthest * 100 / total : 0)%"></span>
+        </span>
+        <span class="catchup-series-value">@(furthest == 0 ? Localizer["catchup.series.notStarted"] : furthest.ToString())</span>
+    </div>;
 }

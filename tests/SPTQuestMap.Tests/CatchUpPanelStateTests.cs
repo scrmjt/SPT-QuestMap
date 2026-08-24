@@ -83,11 +83,11 @@ public sealed class CatchUpPanelStateTests
             Quest("w1", "trader-a", "woods", "Woods", primary: "Available", comparison: "Available"),
         ]);
 
-        Assert.That(state.CatchUpMaps.Select(map => map.Id), Is.EqualTo(new[] { "customs", "woods" }));
+        Assert.That(state.FilterMaps().Select(map => map.Id), Is.EqualTo(new[] { "customs", "woods" }));
     }
 
     [Test]
-    public void SetCatchUpMapFilter_NarrowsChainsToThatMapAndClearsBackToEverything()
+    public void SetMapFilter_NarrowsChainsToThatMapAndClearsBackToEverything()
     {
         var state = BuildState(
         [
@@ -98,19 +98,19 @@ public sealed class CatchUpPanelStateTests
 
         Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EquivalentTo(new[] { "trader-a", "trader-b" }));
 
-        state.SetCatchUpMapFilter("customs");
+        state.SetMapFilter("customs");
         Assert.Multiple(() =>
         {
-            Assert.That(state.CatchUpMapFilter, Is.EqualTo("customs"));
+            Assert.That(state.MapFilter, Is.EqualTo("customs"));
             Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EqualTo(new[] { "trader-a" }));
         });
 
-        state.SetCatchUpMapFilter(string.Empty);
+        state.SetMapFilter(string.Empty);
         Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EquivalentTo(new[] { "trader-a", "trader-b" }));
     }
 
     [Test]
-    public void SetCatchUpMapFilter_LeavesTheSharedMapBreakdownIntact()
+    public void SetMapFilter_LeavesTheSharedMapBreakdownIntact()
     {
         // The breakdown is what the filter is chosen from, so filtering must not shrink it.
         var state = BuildState(
@@ -120,7 +120,7 @@ public sealed class CatchUpPanelStateTests
         ]);
         var before = state.SharedMapRankings.Select(ranking => ranking.MapId).ToArray();
 
-        state.SetCatchUpMapFilter("customs");
+        state.SetMapFilter("customs");
 
         Assert.That(state.SharedMapRankings.Select(ranking => ranking.MapId), Is.EqualTo(before));
     }
@@ -135,7 +135,7 @@ public sealed class CatchUpPanelStateTests
         };
         var state = BuildState(quests);
         state.SetCatchUpExpanded(true);
-        state.SetCatchUpMapFilter("customs");
+        state.SetMapFilter("customs");
 
         // Round-trip through the real localStorage payload, not just the settings record.
         var json = QuestMapSettingsStorage.Serialize(state.CaptureSettings("profile", "en", "comparison", true));
@@ -145,7 +145,7 @@ public sealed class CatchUpPanelStateTests
         Assert.Multiple(() =>
         {
             Assert.That(restored.CatchUpExpanded, Is.True);
-            Assert.That(restored.CatchUpMapFilter, Is.EqualTo("customs"));
+            Assert.That(restored.MapFilter, Is.EqualTo("customs"));
             // The restored filter must actually be applied, not just stored.
             Assert.That(restored.CatchUpChains.Select(chain => chain.TraderId), Is.EqualTo(new[] { "trader-a" }));
         });
@@ -165,18 +165,18 @@ public sealed class CatchUpPanelStateTests
         Assert.Multiple(() =>
         {
             Assert.That(state.CatchUpExpanded, Is.False);
-            Assert.That(state.CatchUpMapFilter, Is.EqualTo(string.Empty));
+            Assert.That(state.MapFilter, Is.EqualTo(string.Empty));
             Assert.That(state.CatchUpChains, Is.Not.Empty);
         });
     }
 
     [Test]
-    public void CatchUpMapFilter_IsDroppedWhenTheMapIsAbsentFromTheLoadedProfiles()
+    public void MapFilter_IsDroppedWhenTheMapIsAbsentFromTheLoadedProfiles()
     {
         // Restoring a filter for a map this profile pair has no quests on must not
         // leave the panel filtered by an option the dropdown cannot even show.
         var state = BuildState([Quest("c1", "trader-a", "customs", "Customs", primary: "Available", comparison: "Completed")]);
-        state.SetCatchUpMapFilter("customs");
+        state.SetMapFilter("customs");
 
         state.SetData(
             BuildTopology([Quest("w1", "trader-b", "woods", "Woods", primary: "Available", comparison: "Completed")]),
@@ -185,7 +185,7 @@ public sealed class CatchUpPanelStateTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(state.CatchUpMapFilter, Is.EqualTo(string.Empty));
+            Assert.That(state.MapFilter, Is.EqualTo(string.Empty));
             Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EqualTo(new[] { "trader-b" }));
         });
     }
@@ -201,13 +201,69 @@ public sealed class CatchUpPanelStateTests
         Assert.Multiple(() =>
         {
             Assert.That(state.CompareMode, Is.False);
+            // Everything that compares two profiles is empty...
             Assert.That(state.CatchUpChains, Is.Empty);
-            Assert.That(state.CatchUpMaps, Is.Empty);
             Assert.That(state.SharedMapRankings, Is.Empty);
+            Assert.That(state.SeriesProgress, Is.Empty);
+            // ...but the map filter drives the graph too, so its options still exist.
+            Assert.That(state.FilterMaps().Select(map => map.Id), Is.EqualTo(new[] { "customs" }));
         });
     }
 
-    private sealed record QuestFact(string Id, string TraderId, QuestMapReferenceDto[] Maps, bool OutOfRaid, string Primary, string Comparison);
+    [Test]
+    public void SetMapFilter_NarrowsTheGraphNotJustThePanel()
+    {
+        var state = BuildState(
+        [
+            Quest("c1", "trader-a", "customs", "Customs", primary: "Available", comparison: "Available"),
+            Quest("w1", "trader-b", "woods", "Woods", primary: "Available", comparison: "Available"),
+        ]);
+        Assert.That(state.VisibleIds, Does.Contain("c1").And.Contain("w1"));
+
+        state.SetMapFilter("customs");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(state.VisibleIds, Does.Contain("c1"));
+            Assert.That(state.VisibleIds, Does.Not.Contain("w1"));
+        });
+    }
+
+    [Test]
+    public void SeriesProgress_ShowsEachProfilesFurthestPartForSeriesOnTheSelectedMap()
+    {
+        var state = BuildState(
+        [
+            Series("Gunsmith", 1, "trader-a", "customs", "Customs", primary: "Completed", comparison: "Completed"),
+            Series("Gunsmith", 2, "trader-a", "customs", "Customs", primary: "Completed", comparison: "Completed"),
+            Series("Gunsmith", 3, "trader-a", "customs", "Customs", primary: "Available", comparison: "Completed"),
+            // A different series that only appears on Woods.
+            Series("Spa Tour", 1, "trader-b", "woods", "Woods", primary: "Completed", comparison: "Available"),
+        ]);
+
+        Assert.That(state.SeriesProgress.Select(entry => entry.SeriesName), Is.EquivalentTo(new[] { "Gunsmith", "Spa Tour" }));
+
+        state.SetMapFilter("customs");
+
+        var gunsmith = state.SeriesProgress.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(gunsmith.SeriesName, Is.EqualTo("Gunsmith"));
+            Assert.That(gunsmith.TotalParts, Is.EqualTo(3));
+            Assert.That(gunsmith.PrimaryFurthest, Is.EqualTo(2));
+            Assert.That(gunsmith.ComparisonFurthest, Is.EqualTo(3));
+        });
+    }
+
+    private static QuestFact Series(string series, int part, string traderId, string mapId, string mapName, string primary, string comparison) =>
+        new($"{series}-{part}", traderId, [new QuestMapReferenceDto(mapId, mapName, null)], OutOfRaid: false, primary, comparison)
+        { DisplayName = $"{series} - Part {part}" };
+
+    private sealed record QuestFact(string Id, string TraderId, QuestMapReferenceDto[] Maps, bool OutOfRaid, string Primary, string Comparison)
+    {
+        /// <summary>Quest name as shown; series grouping is parsed from it. Defaults to the id.</summary>
+        public string? DisplayName { get; init; }
+    }
 
     private static QuestFact Quest(string id, string traderId, string mapId, string mapName, string primary, string comparison) =>
         new(id, traderId, [new QuestMapReferenceDto(mapId, mapName, null)], OutOfRaid: false, primary, comparison);
@@ -232,7 +288,7 @@ public sealed class CatchUpPanelStateTests
     {
         var nodes = quests.Select(fact =>
         {
-            var node = new QuestNodeDto(fact.Id, fact.Id, string.Empty, fact.TraderId, fact.TraderId, null, string.Empty,
+            var node = new QuestNodeDto(fact.Id, fact.DisplayName ?? fact.Id, string.Empty, fact.TraderId, fact.TraderId, null, string.Empty,
                 "Any", new QuestLocationDto("any", null, true, null), null, false, [], [], [], [], []);
             return fact.OutOfRaid ? node : node with { ActualMaps = fact.Maps };
         }).ToArray();

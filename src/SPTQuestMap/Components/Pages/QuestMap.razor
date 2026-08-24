@@ -13,13 +13,13 @@
 {
     <div class="app-shell">
         <QuestMapHeader Localizer="@Localizer" Profiles="@Profiles" SelectedProfile="@SelectedProfile" SelectedComparisonProfile="@SelectedComparisonProfile" CompareMode="@State.CompareMode" Languages="@Bootstrap!.Languages" Busy="@Busy" RefreshRequested="RefreshAsync" ProfileChanged="ChangeProfileAsync" ComparisonProfileChanged="ChangeComparisonProfileAsync" CompareModeChanged="SetCompareModeAsync" SwapProfilesRequested="SwapProfilesAsync" LanguageChanged="ChangeLanguageAsync">
-            <QuestMapFilters State="@State" Localizer="@Localizer" ShowAllFutureChanged="SetShowAllFutureAsync" ShowFinishedChanged="SetShowFinishedAsync" RepeatablesChanged="SetShowRepeatablesAsync" LevelEligibleChanged="SetLevelEligibleAsync" ComparisonFilterChanged="SetComparisonFilterAsync" SearchChanged="SetSearchAsync" TraderChanged="SetTraderAsync" />
+            <QuestMapFilters State="@State" Localizer="@Localizer" ShowAllFutureChanged="SetShowAllFutureAsync" ShowFinishedChanged="SetShowFinishedAsync" RepeatablesChanged="SetShowRepeatablesAsync" LevelEligibleChanged="SetLevelEligibleAsync" ComparisonFilterChanged="SetComparisonFilterAsync" SearchChanged="SetSearchAsync" TraderChanged="SetTraderAsync" MapChanged="SetMapAsync" />
         </QuestMapHeader>
         <main class="workspace">
             <section class="viewport @(State.InProgressExpanded ? "progress-panel-open" : null)" aria-label="@Localizer["graph.aria"]" @ref="ViewportElement">
                 <canvas id="graph" tabindex="0" aria-label="@Localizer["graph.canvasAria"]" @ref="CanvasElement"></canvas>
                 <InProgressDrawer State="@State" Localizer="@Localizer" ExpandedChanged="SetDrawerExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
-                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" MapFilterChanged="SetCatchUpMapFilterAsync" />
+                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
                 <div class="graph-actions" aria-label="@Localizer["graph.actionsAria"]">
                     <button type="button" title="@Localizer["zoom.in"]" @onclick="() => ZoomAsync(1.22)">+</button><button type="button" title="@Localizer["zoom.out"]" @onclick="() => ZoomAsync(1 / 1.22)">−</button>
                     <button type="button" @onclick="FitAsync">@Localizer["fit"]</button><button type="button" disabled="@(!State.CanFocusSelection || State.FocusedId == State.SelectedId)" @onclick="FocusAsync">@Localizer["focus"]</button>
@@ -183,11 +183,9 @@
         await SaveSettingsAsync();
     }
 
-    private async Task SetCatchUpMapFilterAsync(string value)
-    {
-        State.SetCatchUpMapFilter(value);
-        await SaveSettingsAsync();
-    }
+    // The map filter narrows the graph as well as the panel, so unlike the panel's own
+    // expand state it does need the renderer to resynchronise.
+    private Task SetMapAsync(string value) => ChangeViewAsync(() => State.SetMapFilter(value));
 
     private async Task ChangeViewAsync(Action change)
     {
