@@ -1,6 +1,7 @@
 @using System.Globalization
 
-<aside class="details" aria-label="@Localizer["details.aria"]">
+@* Collapsed to zero width until a quest is actually selected, so the graph keeps the space. *@
+<aside class="details @(State.SelectedNode is null ? "collapsed" : null)" aria-label="@Localizer["details.aria"]">
     @if (State.SelectedNode is not { } node)
     {
         <div class="empty-details"><span class="empty-icon">◇</span><h2>@Localizer["details.selectTitle"]</h2><p>@Localizer["details.selectHelp"]</p></div>

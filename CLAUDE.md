@@ -89,6 +89,16 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 - **`FilterDropdown` renders no panel while `Disabled`.** Disabling only the trigger button
   left an already-open panel live during focus mode, where the state setters ignore changes —
   the checkbox moved and nothing filtered.
+- **`.topbar` is the left sidebar, not a top bar.** `.app-shell` is `grid-template-columns`,
+  not rows. Identity (both profiles, swap, language) and every filter stack vertically there
+  so the graph gets the window's full height.
+- **The side panels are in flow, never absolutely positioned.** `.side-views` is a real
+  workspace column, so expanding In Progress or the Catch-Up Planner pushes the graph right
+  instead of covering it. `.workspace` is `auto minmax(0,1fr) auto` - panels, graph, details.
+- **`.details.collapsed` must stay zero-sized in every breakpoint.** The `max-width: 1050px`
+  block sets `min-height: 22rem` on `.details`; without an explicit collapsed override there
+  it reserves 22rem for an empty pane. This is invisible in a screenshot whenever a quest
+  happens to be selected - check `getComputedStyle`, not just the picture.
 - **The canvas renderer is configured by TWO payloads and both must be updated together.**
   `QuestGraphView` feeds `initialize`/`refresh` on first paint; `QuestGraphUpdate` feeds
   `synchronize` on every later change. Both land in the same `applyConfig`. Adding a field to
