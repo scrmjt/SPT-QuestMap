@@ -17,7 +17,7 @@
                 {
                     var comparison = State.GetComparison(quest.Node.Id);
                     <button class="in-progress-quest @(quest.Node.Id == State.SelectedId ? "selected" : null) @(State.CompareMode ? comparison.HasDifferences ? "comparison-changed" : "comparison-matching" : null)" type="button" @onclick="() => QuestSelected.InvokeAsync(quest.Node.Id)">
-                        <span class="in-progress-quest-header"><strong>@quest.Node.Name</strong><span class="in-progress-location">@LocationName(quest.Node)</span></span>
+                        <span class="in-progress-quest-header"><strong>@quest.Node.Name</strong><span class="in-progress-location">@LocationName(quest.Node)@ObjectiveMixText(quest.Node.Id)</span></span>
                         @if (State.CompareMode)
                         {
                             @if (comparison.HasDifferences)
@@ -48,6 +48,19 @@
 </aside>
 
 @code {
+    /// <summary>
+    /// Appends what the quest actually asks for — "· 5 kills · 3 items" — to the location
+    /// line. The difference badges say why two profiles disagree; nothing else in the card
+    /// said what the work IS.
+    /// </summary>
+    private string ObjectiveMixText(string questId)
+    {
+        var mix = State.ObjectiveMix(questId);
+        if (mix.Count == 0) return string.Empty;
+        var parts = mix.Take(2).Select(entry => Localizer.Format($"objective.kind.{entry.Kind}", ("count", entry.Amount)));
+        return " · " + string.Join(" · ", parts);
+    }
+
     [Parameter, EditorRequired] public QuestMapPageState State { get; set; } = default!;
     [Parameter, EditorRequired] public QuestMapLocalizer Localizer { get; set; } = default!;
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }

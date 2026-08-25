@@ -791,6 +791,38 @@ public sealed class QuestMapPageState
             StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// What a quest actually asks you to do, as a small ordered list of (kind, amount) pairs
+    /// — "kill 5, item 3". The amount is the objective's required value where the template
+    /// gives one, otherwise the number of objectives of that kind. Nested objectives that do
+    /// not contribute to progress are skipped so a counter is not double counted.
+    /// </summary>
+    public IReadOnlyList<ObjectiveMixEntry> ObjectiveMix(string questId)
+    {
+        if (!_nodeById.TryGetValue(questId, out var node) || node.Objectives.Length == 0) return [];
+
+        return node.Objectives
+            .Where(objective => objective.ContributesToProgress)
+            .GroupBy(objective => objective.ObjectiveKind, StringComparer.Ordinal)
+            .Select(group => new ObjectiveMixEntry(group.Key, MixAmount(group.Key, group)))
+            .OrderByDescending(entry => entry.Amount)
+            .ThenBy(entry => entry.Kind, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// How much of a kind a quest asks for. For most kinds the template's required value IS
+    /// the count — kill 8, hand over 12. For loyalty, skill and quest prerequisites it is a
+    /// THRESHOLD, not a quantity: summing it turns "reach Loyalty Level 4" into "28 trader".
+    /// Those kinds count objectives instead.
+    /// </summary>
+    private static int MixAmount(string kind, IEnumerable<ObjectiveDefinitionDto> objectives)
+    {
+        var list = objectives.ToArray();
+        if (kind is "trader" or "skill" or "quest") return list.Length;
+        return (int)Math.Max(list.Length, list.Sum(objective => objective.RequiredValue ?? 1));
+    }
+
     /// <summary>True when no trader is selected, or the quest belongs to one of them.</summary>
     private bool MatchesTraderFilter(string questId)
         => TraderFilter.Count == 0
@@ -993,5 +1025,8 @@ public sealed record QuestGraphView(string? ProfileId, string? ComparisonProfile
 public sealed record QuestGraphSnapshot(QuestTopologyDto Topology, ProfileStateDto? Profile, ProfileStateDto? ComparisonProfile, QuestGraphView View);
 /// <summary>Quests still needing a raid on one location, per profile and shared.</summary>
 public sealed record MapQuestCounts(int Primary, int Comparison, int Shared);
+
+/// <summary>One kind of thing a quest asks for, and how much of it.</summary>
+public sealed record ObjectiveMixEntry(string Kind, int Amount);
 
 public sealed record QuestGraphUpdate(string[] VisibleQuestIds, string? SelectedId, string? FocusedId, string[] PrerequisiteIds, string[] SuccessorIds, int[] HighlightedEdgeIndexes, QuestComparisonDto[] Comparisons, bool CompareMode, bool InProgressExpanded, string ViewportScope, string PrimaryLabel, string ComparisonLabel);

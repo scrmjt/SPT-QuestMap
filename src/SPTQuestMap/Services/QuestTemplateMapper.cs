@@ -384,7 +384,10 @@ internal static class QuestTemplateMapper
                 condition.VisibilityConditions?.Select(value => value.Target).Where(target => !string.IsNullOrEmpty(target)).Cast<string>().ToArray() ?? [],
                 GetObjectiveZoneIds(condition),
                 condition.OneSessionOnly == true,
-                condition.DoNotResetIfCounterCompleted == true));
+                condition.DoNotResetIfCounterCompleted == true)
+            {
+                ObjectiveKind = ClassifyObjective(condition.ConditionType, condition.Counter?.Conditions),
+            });
 
             var counterConditions = condition.Counter?.Conditions ?? [];
             if (!counterConditions.Any(IsWttSalvageCondition)) continue;
@@ -412,6 +415,7 @@ internal static class QuestTemplateMapper
                     GetCounterConditionZoneIds(child))
                 {
                     ContributesToProgress = false,
+                    ObjectiveKind = ClassifyObjective(child.ConditionType, null),
                 });
             }
         }
@@ -457,6 +461,37 @@ internal static class QuestTemplateMapper
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Maps a raw SPT condition type onto what the player has to do. "CounterCreator" is a
+    /// wrapper and is by far the most common objective type, so its inner counter conditions
+    /// decide the answer; without them over half of all objectives would read as one
+    /// meaningless bucket. Inner types are checked in priority order because a single counter
+    /// often carries both a Kills condition and the Location it must happen on.
+    /// </summary>
+    private static string ClassifyObjective(string? conditionType, IReadOnlyCollection<QuestConditionCounterCondition>? counterConditions)
+    {
+        if (counterConditions is { Count: > 0 })
+        {
+            var inner = counterConditions.Select(condition => condition.ConditionType).ToArray();
+            if (inner.Any(type => type is "Kills" or "Shots")) return "kill";
+            if (inner.Any(type => type is "ExitStatus" or "ExitName")) return "extract";
+            if (inner.Any(type => type is "VisitPlace" or "InZone")) return "visit";
+            if (inner.Any(type => type is "Equipment" or "HealthEffect" or "LaunchFlare")) return "other";
+        }
+
+        return conditionType switch
+        {
+            "HandoverItem" or "FindItem" or "LeaveItemAtLocation" or "SellItemToTrader" => "item",
+            "PlaceBeacon" => "place",
+            "WeaponAssembly" => "build",
+            "Skill" => "skill",
+            "TraderLoyalty" or "TraderStanding" => "trader",
+            "Quest" => "quest",
+            "CounterCreator" => "visit",
+            _ => "other",
+        };
     }
 
     private static string HumanizeConditionType(string? conditionType)

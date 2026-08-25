@@ -89,6 +89,15 @@ public sealed record ObjectiveDefinitionDto(
     bool OneSessionOnly = false,
     bool DoNotResetIfCounterCompleted = false)
 {
+    /// <summary>
+    /// What the player actually has to DO: "kill", "item", "place", "extract", "visit",
+    /// "build", "skill", "trader", "quest" or "other". Derived when the template is mapped,
+    /// because the useful signal for the most common type (CounterCreator, which is over half
+    /// of all objectives) lives in its inner counter conditions and is not recoverable from
+    /// <see cref="ConditionType"/> alone.
+    /// </summary>
+    public string ObjectiveKind { get; init; } = "other";
+
     public string[] MapIds { get; init; } = [];
 
     public string[] UnresolvedZoneIds { get; init; } = [];

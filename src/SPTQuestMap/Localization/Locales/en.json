@@ -202,5 +202,16 @@
   "map.badge.primary": "{profile} still needs a raid here for {count} quest(s)",
   "map.badge.comparison": "{profile} still needs a raid here for {count} quest(s)",
   "map.badge.shared": "Both players still need a raid here for {count} quest(s)",
-  "filters.section": "Filters"
+  "filters.section": "Filters",
+  "objective.kind.kill": "{count} kills",
+  "objective.kind.item": "{count} items",
+  "objective.kind.place": "{count} placements",
+  "objective.kind.extract": "{count} extracts",
+  "objective.kind.visit": "{count} locations",
+  "objective.kind.build": "{count} builds",
+  "objective.kind.skill": "{count} skill",
+  "objective.kind.trader": "{count} trader",
+  "objective.kind.quest": "{count} quest",
+  "objective.kind.other": "{count} tasks",
+  "objective.mix.aria": "What this quest asks for"
 }

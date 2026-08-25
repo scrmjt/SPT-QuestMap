@@ -89,6 +89,22 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 - **`FilterDropdown` renders no panel while `Disabled`.** Disabling only the trigger button
   left an already-open panel live during focus mode, where the state setters ignore changes —
   the checkbox moved and nothing filtered.
+- **Panel content scrolls via `flex: 1 1 auto; min-height: 0`, never `height: calc(100% - Npx)`.**
+  The old form worked only while the panels were absolutely positioned with a fixed top and
+  bottom. As flex children their height is content-driven, so `100%` resolves against `auto`
+  and the list runs off the bottom of the page instead of scrolling. `min-height: 0` is the
+  part that actually lets a flex child shrink.
+- **`ObjectiveDefinitionDto.ObjectiveKind` is derived at mapping time, not in the UI.**
+  `ConditionType` alone is not enough: `CounterCreator` is over half of all objectives and is
+  a wrapper whose inner counter conditions decide whether it is kills, extracts or visits.
+  Inner types are tested in priority order because one counter usually carries both a `Kills`
+  condition and the `Location` it must happen on - unordered, every kill quest reads as
+  "visit".
+- **Required value is a quantity for most kinds and a THRESHOLD for `trader`, `skill` and
+  `quest`.** Summing it there turned "reach Loyalty Level 4" into "28 trader". Those kinds
+  count objectives instead. See `MixAmount`.
+- **Known gap: the objective mix has no plural forms** ("1 builds"), and its counts come from
+  the quest template, so they say what the quest asks for, not what remains.
 - **`.topbar` is the left sidebar, not a top bar.** `.app-shell` is `grid-template-columns`,
   not rows. Identity (both profiles, swap, language) and every filter stack vertically there
   so the graph gets the window's full height.

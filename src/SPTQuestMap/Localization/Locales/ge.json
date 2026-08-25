@@ -198,5 +198,16 @@
   "map.badge.primary": "{profile} braucht hier noch {count} Raid-Quest(s)",
   "map.badge.comparison": "{profile} braucht hier noch {count} Raid-Quest(s)",
   "map.badge.shared": "Beide Spieler brauchen hier noch {count} Raid-Quest(s)",
-  "filters.section": "Filter"
+  "filters.section": "Filter",
+  "objective.kind.kill": "{count} Kills",
+  "objective.kind.item": "{count} Items",
+  "objective.kind.place": "{count} Platzierungen",
+  "objective.kind.extract": "{count} Extraktionen",
+  "objective.kind.visit": "{count} Orte",
+  "objective.kind.build": "{count} Waffenbauten",
+  "objective.kind.skill": "{count} Skill",
+  "objective.kind.trader": "{count} Händler",
+  "objective.kind.quest": "{count} Quest",
+  "objective.kind.other": "{count} Aufgaben",
+  "objective.mix.aria": "Was diese Quest verlangt"
 }
