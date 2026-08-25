@@ -13,7 +13,7 @@
 {
     <div class="app-shell">
         <QuestMapHeader Localizer="@Localizer" Profiles="@Profiles" SelectedProfile="@SelectedProfile" SelectedComparisonProfile="@SelectedComparisonProfile" CompareMode="@State.CompareMode" Languages="@Bootstrap!.Languages" Busy="@Busy" RefreshRequested="RefreshAsync" ProfileChanged="ChangeProfileAsync" ComparisonProfileChanged="ChangeComparisonProfileAsync" CompareModeChanged="SetCompareModeAsync" SwapProfilesRequested="SwapProfilesAsync" LanguageChanged="ChangeLanguageAsync">
-            <QuestMapFilters State="@State" Localizer="@Localizer" ShowAllFutureChanged="SetShowAllFutureAsync" ShowFinishedChanged="SetShowFinishedAsync" RepeatablesChanged="SetShowRepeatablesAsync" LevelEligibleChanged="SetLevelEligibleAsync" ComparisonFilterChanged="SetComparisonFilterAsync" SearchChanged="SetSearchAsync" TraderChanged="SetTraderAsync" MapChanged="SetMapAsync" />
+            <QuestMapFilters State="@State" Localizer="@Localizer" ShowAllFutureChanged="SetShowAllFutureAsync" ShowFinishedChanged="SetShowFinishedAsync" RepeatablesChanged="SetShowRepeatablesAsync" LevelCapChanged="SetLevelCapAsync" ComparisonFilterChanged="SetComparisonFilterAsync" SearchChanged="SetSearchAsync" TraderChanged="SetTraderAsync" MapChanged="SetMapAsync" />
         </QuestMapHeader>
         <main class="workspace">
             <div class="side-views">
@@ -172,7 +172,7 @@
     private Task SetShowAllFutureAsync(bool value) => ChangeViewAsync(() => State.SetShowAllFuture(value));
     private Task SetShowFinishedAsync(bool value) => ChangeViewAsync(() => State.SetShowFinished(value));
     private Task SetShowRepeatablesAsync(bool value) => ChangeViewAsync(() => State.SetShowRepeatables(value));
-    private Task SetLevelEligibleAsync(bool value) => ChangeViewAsync(() => State.SetLevelEligibleOnly(value));
+    private Task SetLevelCapAsync(int value) => ChangeViewAsync(() => State.SetLevelCap(value));
     private Task SetComparisonFilterAsync(QuestComparisonFilter value) => ChangeViewAsync(() => State.SetComparisonFilter(value));
     private Task SetSearchAsync(string value) => ChangeViewAsync(() => State.SetSearch(value));
     private Task SetTraderAsync(IReadOnlySet<string> value) => ChangeViewAsync(() => State.SetTraderFilter(value));

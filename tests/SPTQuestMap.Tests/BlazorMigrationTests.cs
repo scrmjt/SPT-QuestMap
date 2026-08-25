@@ -343,7 +343,8 @@ public sealed class BlazorMigrationTests
     {
         var state = CreateComparisonState();
         state.SetShowFinished(false);
-        state.SetLevelEligibleOnly(true);
+        // The level filter is a cap now, not a boolean; any positive value turns it on.
+        state.SetLevelCap(15);
 
         Assert.Multiple(() =>
         {
@@ -1017,9 +1018,16 @@ public sealed class BlazorMigrationTests
             "wait-difference", "exclusion-difference", "combined-difference",
             "finished-active", "both-finished", "level-available", "both-level-gated",
         };
-        var nodes = ids.Select(id => id is "objective-difference" or "combined-difference"
-            ? Node(id, id, "trader-a") with { Objectives = [new ObjectiveDefinitionDto("objective", "Make progress", "CounterCreator", 0, null, 10, null, [])] }
-            : Node(id, id, "trader-a")).ToArray();
+        var nodes = ids.Select(id => id switch
+        {
+            "objective-difference" or "combined-difference" =>
+                Node(id, id, "trader-a") with { Objectives = [new ObjectiveDefinitionDto("objective", "Make progress", "CounterCreator", 0, null, 10, null, [])] },
+            // The level filter is a cap read from the quest's own declared requirement, so a
+            // node that is meant to be filtered out has to actually declare one.
+            "both-level-gated" =>
+                Node(id, id, "trader-a") with { EffectiveRequirements = [new RequirementDto("Level", null, ">=", 40)] },
+            _ => Node(id, id, "trader-a"),
+        }).ToArray();
         var topology = new QuestTopologyDto("version", nodes, [], [new QuestTraderDto("trader-a", "Trader A", null)], [], []);
         var primary = new ProfileStateDto("profile", "Primary", "Usec", 10, 0, false, false,
             [

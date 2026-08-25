@@ -213,5 +213,6 @@
   "catchup.gatedChains": "{count} gesperrte Ketten",
   "catchup.gatedQuests": "{count} gesperrt",
   "catchup.maps.title": "Beste Karten zum Aufholen",
-  "catchup.maps.count": "{count} Aufhol-Quests"
+  "catchup.maps.count": "{count} Aufhol-Quests",
+  "level.any": "Jede Stufe"
 }

@@ -44,7 +44,24 @@ public sealed class QuestMapPageState
     public bool ShowAllFuture { get; private set; }
     public bool ShowFinished { get; private set; } = true;
     public bool ShowRepeatables { get; private set; } = true;
-    public bool LevelEligibleOnly { get; private set; } = true;
+    /// <summary>
+    /// Hide quests whose PMC level gate is above <see cref="LevelCap"/>. Zero means off.
+    /// A CAP rather than a per-profile check: in a mixed-level comparison the old
+    /// "gated for every profile" test never fired, because a level-38 profile is gated by
+    /// almost nothing and kept everything visible.
+    /// </summary>
+    public int LevelCap { get; private set; }
+
+    public bool LevelEligibleOnly => LevelCap > 0;
+
+    /// <summary>Levels worth offering as presets: every profile currently in play.</summary>
+    public IReadOnlyList<(string Label, int Level)> LevelPresets =>
+        new[] { (Profile?.Nickname ?? "A", Profile?.Level ?? 0), (ComparisonProfile?.Nickname ?? "B", ComparisonProfile?.Level ?? 0) }
+            .Where(preset => preset.Item2 > 0 && (CompareMode || preset.Item1 == (Profile?.Nickname ?? "A")))
+            .GroupBy(preset => preset.Item2)
+            .Select(group => (Label: string.Join(" / ", group.Select(item => item.Item1)), Level: group.Key))
+            .OrderBy(preset => preset.Level)
+            .ToArray();
     public bool InProgressExpanded { get; private set; }
     public QuestDetailTextTab DetailTextTab { get; private set; }
     public QuestComparisonFilter ComparisonFilter { get; private set; }
@@ -117,7 +134,9 @@ public sealed class QuestMapPageState
         ShowAllFuture = settings.ShowAllFuture;
         ShowFinished = settings.ShowFinished;
         ShowRepeatables = settings.ShowRepeatables;
-        LevelEligibleOnly = settings.LevelEligibleOnly;
+        // Older settings stored a boolean; promote it to this profile's own level so the
+        // filter keeps meaning the same thing after upgrading.
+        LevelCap = settings.LevelCap ?? (settings.LevelEligibleOnly ? Profile?.Level ?? 0 : 0);
         InProgressExpanded = settings.InProgressExpanded;
         DetailTextTab = settings.DetailTextTab;
         Search = settings.Search ?? string.Empty;
@@ -151,6 +170,7 @@ public sealed class QuestMapPageState
             DetailTextTab = DetailTextTab,
             CatchUpExpanded = CatchUpExpanded,
             MapFilter = SingleOrEmpty(MapFilter),
+            LevelCap = LevelCap,
             TraderFilters = TraderFilter.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             MapFilters = MapFilter.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             ComparePairs = new Dictionary<string, QuestProfileUiSettings>(_comparePairSettings, StringComparer.Ordinal),
@@ -200,7 +220,7 @@ public sealed class QuestMapPageState
     public void SetShowAllFuture(bool value) { ShowAllFuture = value; Recalculate(); }
     public void SetShowFinished(bool value) { if (!FocusMode) ShowFinished = value; Recalculate(); }
     public void SetShowRepeatables(bool value) { if (!FocusMode) ShowRepeatables = value; Recalculate(); }
-    public void SetLevelEligibleOnly(bool value) { if (!FocusMode) LevelEligibleOnly = value; Recalculate(); }
+    public void SetLevelCap(int value) { if (!FocusMode) LevelCap = value < 0 ? 0 : value; Recalculate(); }
     public void SetInProgressExpanded(bool value) => InProgressExpanded = value;
     public void SetComparisonFilter(QuestComparisonFilter value) { if (!FocusMode && CompareMode) ComparisonFilter = value; Recalculate(); }
     public void SetCatchUpExpanded(bool value) => CatchUpExpanded = value;
@@ -429,7 +449,7 @@ public sealed class QuestMapPageState
             var revealFinished = focusMode || selected || PrerequisiteIds.Contains(id);
             var selectionContext = selected || PrerequisiteIds.Contains(id) || SuccessorIds.Contains(id);
             if (!showFinished && !revealFinished && IsFinishedForEveryApplicableProfile(node, id)) return;
-            if (!selected && levelOnly && IsLevelGatedForEveryApplicableProfile(id)) return;
+            if (!selected && levelOnly && ExceedsLevelCap(id)) return;
             if (!selected && !traderUnfiltered && !traders.Contains(node.TraderId) && !PrerequisiteIds.Contains(id)) return;
             if (!selected && !mapUnfiltered && !MatchesMapFilter(node) && !PrerequisiteIds.Contains(id)) return;
             if (!selected && search.Length > 0 && !$"{node.Name} {node.TraderName} {node.Id}".Contains(search, StringComparison.OrdinalIgnoreCase)) return;
@@ -469,7 +489,7 @@ public sealed class QuestMapPageState
                     var selected = targetId == SelectedId;
                     var revealFinished = selected || PrerequisiteIds.Contains(targetId);
                     if (!showFinished && !revealFinished && IsFinishedForEveryApplicableProfile(target, targetId)) continue;
-                    if (!selected && levelOnly && IsLevelGatedForEveryApplicableProfile(targetId)) continue;
+                    if (!selected && levelOnly && ExceedsLevelCap(targetId)) continue;
                     if (CompareMode) _comparisonScopeIds.Add(targetId);
                     if (CompareMode && !selected && !PrerequisiteIds.Contains(targetId) && !SuccessorIds.Contains(targetId) && !MatchesComparisonFilter(targetId)) continue;
 
@@ -564,14 +584,25 @@ public sealed class QuestMapPageState
         return states.Count > 0 && states.All(state => IsFinished(node, state));
     }
 
-    private bool IsLevelGatedForEveryApplicableProfile(string id)
+    /// <summary>
+    /// True when the quest's own PMC level requirement is above the cap. Quests with no
+    /// level gate are never hidden by this filter.
+    /// </summary>
+    private bool ExceedsLevelCap(string id)
     {
-        var states = new List<QuestStateDto?>();
-        if (IsPrimaryApplicable(id)) states.Add(GetQuestState(id));
-        if (IsComparisonApplicable(id)) states.Add(GetComparisonQuestState(id));
-        return states.Count > 0 && states.All(state => state is not null
-            && CoreQuestGraphRules.TryParseProfileDisplayState(state.DisplayState, out var display)
-            && CoreQuestGraphRules.IsLevelGatedForFilter(display));
+        if (LevelCap <= 0) return false;
+        return RequiredLevel(id) is { } required && required > LevelCap;
+    }
+
+    /// <summary>The highest PMC level this quest and its inherited gates demand.</summary>
+    public int? RequiredLevel(string id)
+    {
+        if (!_nodeById.TryGetValue(id, out var node)) return null;
+        var levels = node.EffectiveRequirements
+            .Where(requirement => requirement.Kind == "Level")
+            .Select(requirement => (int)Math.Round(requirement.Value))
+            .ToArray();
+        return levels.Length == 0 ? null : levels.Max();
     }
 
     private IEnumerable<QuestStateDto?> GetApplicableStates(string id)
@@ -1086,6 +1117,7 @@ public sealed record QuestMapSettings(string? SelectedProfileId, string? Languag
     public string? MapFilter { get; init; } = string.Empty;
     public IReadOnlyList<string>? TraderFilters { get; init; }
     public IReadOnlyList<string>? MapFilters { get; init; }
+    public int? LevelCap { get; init; }
     public IReadOnlyDictionary<string, QuestProfileUiSettings>? ComparePairs { get; init; } = new Dictionary<string, QuestProfileUiSettings>();
     public static QuestMapSettings Default { get; } = new(null, null, false, true, true, false, string.Empty, string.Empty, new Dictionary<string, QuestProfileUiSettings>());
 }

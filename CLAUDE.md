@@ -89,6 +89,16 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 - **`FilterDropdown` renders no panel while `Disabled`.** Disabling only the trigger button
   left an already-open panel live during focus mode, where the state setters ignore changes —
   the checkbox moved and nothing filtered.
+- **The level filter is a CAP on the quest's own declared requirement, not a per-profile
+  gate check.** It used to hide a quest only when it was level-gated for EVERY applicable
+  profile, so in a mixed-level comparison (Regdab 8 vs ScramJet 38) it filtered nothing at
+  all - a level-38 profile is gated by almost nothing and kept everything visible. Now it
+  reads `EffectiveRequirements` where `Kind == "Level"` and hides anything above the cap.
+  Presets are the loaded profiles' own levels. Quests with no declared level gate are never
+  hidden by it.
+- **`PoolCatchUpRules` is the N-profile analysis; the pairwise compare mode is separate.**
+  Roles are derived per chain (the same profile can lead one and trail another). Map priority
+  sums steps-behind, and a chain scores once per map however many quests it has there.
 - **Panel content scrolls via `flex: 1 1 auto; min-height: 0`, never `height: calc(100% - Npx)`.**
   The old form worked only while the panels were absolutely positioned with a fixed top and
   bottom. As flex children their height is content-driven, so `100%` resolves against `auto`

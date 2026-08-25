@@ -8,7 +8,20 @@
             <button class="filter-toggle repeatable-toggle @(!State.CompareMode && State.ShowRepeatables ? "active" : null)" type="button" aria-pressed="@(!State.CompareMode && State.ShowRepeatables).ToString().ToLowerInvariant()" title="@Localizer[State.CompareMode ? "compare.repeatablesUnavailable" : "showRepeatables"]" aria-label="@Localizer[State.CompareMode ? "compare.repeatablesUnavailable" : "showRepeatables"]" disabled="@(State.FocusMode || State.CompareMode)" @onclick="() => RepeatablesChanged.InvokeAsync(!State.ShowRepeatables)">
                 <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M7 2v3M17 2v3M3.5 9h17M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>
             </button>
-            <button class="filter-toggle level-toggle @(State.LevelEligibleOnly ? "active" : null)" type="button" aria-pressed="@State.LevelEligibleOnly.ToString().ToLowerInvariant()" title="@Localizer["levelEligible"]" aria-label="@Localizer["levelEligible"]" disabled="@State.FocusMode" @onclick="() => LevelEligibleChanged.InvokeAsync(!State.LevelEligibleOnly)"><span>≤ @(State.Profile?.Level.ToString() ?? "?")</span></button>
+            <label class="filter-toggle level-toggle @(State.LevelEligibleOnly ? "active" : null)" title="@Localizer["levelEligible"]">
+                <span class="sr-only">@Localizer["levelEligible"]</span>
+                <select disabled="@State.FocusMode" @onchange="OnLevelCapChanged">
+                    <option value="0" selected="@(State.LevelCap == 0)">@Localizer["level.any"]</option>
+                    @foreach (var preset in State.LevelPresets)
+                    {
+                        <option value="@preset.Level" selected="@(State.LevelCap == preset.Level)">≤ @preset.Level · @preset.Label</option>
+                    }
+                    @foreach (var step in LevelSteps.Where(step => State.LevelPresets.All(preset => preset.Level != step)))
+                    {
+                        <option value="@step" selected="@(State.LevelCap == step)">≤ @step</option>
+                    }
+                </select>
+            </label>
         </div>
         <label class="field search-field"><span class="sr-only">@Localizer["search.label"]</span><input type="search" value="@State.Search" placeholder="@Localizer["search.placeholder"]" autocomplete="off" @oninput="OnSearchInput"></label>
         @{ var maps = State.FilterMaps(); }
@@ -64,13 +77,19 @@
     [Parameter] public EventCallback<bool> ShowAllFutureChanged { get; set; }
     [Parameter] public EventCallback<bool> ShowFinishedChanged { get; set; }
     [Parameter] public EventCallback<bool> RepeatablesChanged { get; set; }
-    [Parameter] public EventCallback<bool> LevelEligibleChanged { get; set; }
+    [Parameter] public EventCallback<int> LevelCapChanged { get; set; }
     [Parameter] public EventCallback<QuestComparisonFilter> ComparisonFilterChanged { get; set; }
     [Parameter] public EventCallback<string> SearchChanged { get; set; }
     [Parameter] public EventCallback<IReadOnlySet<string>> TraderChanged { get; set; }
     [Parameter] public EventCallback<IReadOnlySet<string>> MapChanged { get; set; }
 
     private Task OnSearchInput(ChangeEventArgs args) => SearchChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+
+    /// <summary>Round levels offered alongside the players' own, for exploring ahead.</summary>
+    private static readonly int[] LevelSteps = [5, 10, 15, 20, 25, 30, 40, 50, 60];
+
+    private Task OnLevelCapChanged(ChangeEventArgs args)
+        => LevelCapChanged.InvokeAsync(int.TryParse(args.Value?.ToString(), out var level) ? level : 0);
 
     private static QuestComparisonFilter[] ComparisonFilters { get; } = Enum.GetValues<QuestComparisonFilter>();
 

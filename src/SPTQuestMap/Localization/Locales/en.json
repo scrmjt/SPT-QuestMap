@@ -217,5 +217,6 @@
   "catchup.gatedChains": "{count} gated chains",
   "catchup.gatedQuests": "{count} gated",
   "catchup.maps.title": "Best Maps to Catch Up",
-  "catchup.maps.count": "{count} catch-up"
+  "catchup.maps.count": "{count} catch-up",
+  "level.any": "Any level"
 }
