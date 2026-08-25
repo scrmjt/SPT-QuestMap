@@ -13,3 +13,4 @@ reference/test-profiles/*
 !reference/test-profiles/README.md
 config/questmap.local.json
 scripts/restart-command.local.txt
+.llama/cache/

@@ -12,7 +12,7 @@ Design notes:
   * Compiler output is truncated and de-duplicated, because repeated identical errors
     across projects crowd out the spec in the model's context window.
 """
-import argparse, json, pathlib, re, subprocess, sys, urllib.request
+import argparse, os, json, pathlib, re, subprocess, sys, urllib.request
 
 FENCE = re.compile(r"```(?:[a-zA-Z]*)\n(.*?)```", re.DOTALL)
 
@@ -25,17 +25,28 @@ def strip_fence(text: str) -> str:
     return text.strip() + "\n"
 
 
-def ask(base_url: str, system: str, user: str, max_tokens: int, temperature: float, timeout: float) -> str:
+def ask(base_url: str, system: str, user: str, max_tokens: int, temperature: float,
+        timeout: float, api_key: str | None = None, model: str | None = None,
+        chat_path: str = "/v1/chat/completions") -> str:
     payload = {
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,
     }
+    # llama-server serves whatever model it was started with and ignores this field;
+    # hosted endpoints require it.
+    if model:
+        payload["model"] = model
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = "Bearer " + api_key
+
     req = urllib.request.Request(
-        f"{base_url}/v1/chat/completions",
+        base_url.rstrip("/") + chat_path,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.load(resp)
@@ -43,21 +54,6 @@ def ask(base_url: str, system: str, user: str, max_tokens: int, temperature: flo
     if choice.get("finish_reason") == "length":
         print("  ! hit max_tokens; output may be truncated", file=sys.stderr)
     return choice["message"]["content"]
-
-
-# Build failures the model can do nothing about. An unset SPT_ROOT once cost four full
-# attempts: every one regenerated fine, every one hit the same project-level error before
-# the compiler ever reached the generated file, and the model had no way to tell. Bail
-# out and say so instead of burning the attempt budget on an unfixable error.
-ENVIRONMENT_ERRORS = (
-    "set eftinstallroot",
-    "set sptinstallroot",
-    "spt_root",
-    "sdk not found",
-    "msb1009",   # project file does not exist
-    "nu1101",    # package not found
-)
-
 
 def is_environment_failure(output: str) -> bool:
     lowered = output.lower()
@@ -106,6 +102,12 @@ def main() -> int:
     ap.add_argument("--max-tokens", type=int, default=4000)
     ap.add_argument("--temperature", type=float, default=0.15)
     ap.add_argument("--base-url", default="http://127.0.0.1:8080")
+    ap.add_argument("--api-key", default=os.environ.get("GEMINI_API_KEY"),
+                    help="Bearer token. Defaults to $GEMINI_API_KEY. Local llama-server needs none.")
+    ap.add_argument("--model", default=None,
+                    help="Model id for hosted endpoints, e.g. gemini-3.1-pro-preview.")
+    ap.add_argument("--chat-path", default="/v1/chat/completions",
+                    help="Gemini's OpenAI surface already ends in /openai, so pass /chat/completions.")
     ap.add_argument("--timeout", type=float, default=1800)
     args = ap.parse_args()
 
@@ -118,7 +120,9 @@ def main() -> int:
     for attempt in range(1, args.attempts + 1):
         print(f"[attempt {attempt}/{args.attempts}] generating...", flush=True)
         try:
-            raw = ask(args.base_url, system, prompt, args.max_tokens, args.temperature, args.timeout)
+            raw = ask(args.base_url, system, prompt, args.max_tokens, args.temperature, args.timeout,
+                   api_key=args.api_key, model=args.model,
+                   chat_path=args.chat_path)
         except Exception as exc:
             print(f"FAILED: llama-server error: {exc}")
             return 2
