@@ -144,6 +144,29 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .trader-option img { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: transparent; }
 .trader-option.selected img { outline: 2px solid #e2c45f; outline-offset: 1px; }
 .trader-option span { display: -webkit-box; width: 100%; overflow: hidden; font-size: .58rem; font-weight: 700; line-height: 1.05; text-align: center; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Excel-style multi-select filters. Replaces the trader/map radio rows; the panel is
+   absolutely positioned so opening it cannot reflow the fixed-height filter bar. */
+.filter-dropdowns { display: flex; flex: 1 1 auto; align-items: center; gap: .5rem; min-width: 0; }
+.filter-dropdown-label { position: relative; display: block; min-width: 0; flex: 0 1 15rem; }
+.filter-dropdown { position: relative; }
+.filter-dropdown-button { width: 100%; height: 32px; padding: 0 1.5rem 0 .5rem; overflow: hidden; border-color: #565d52; background: #222721; color: #cfd2c8; font-size: .72rem; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.filter-dropdown-button::after { position: absolute; top: 50%; right: .45rem; content: "BE"; transform: translateY(-50%); color: #9fa39a; font-size: .65rem; }
+.filter-dropdown-button:hover:not(:disabled) { border-color: #76652f; background: #2a2f27; }
+.filter-dropdown-button[aria-expanded="true"] { border-color: #ddbf5b; background: #51451f; color: #fff2c5; }
+.filter-dropdown-button:disabled { opacity: .45; }
+.filter-dropdown-panel { position: absolute; z-index: 40; top: calc(100% + 3px); left: 0; display: grid; width: max(100%, 15rem); max-height: 19rem; gap: .3rem; padding: .4rem; border: 1px solid #565d52; border-radius: 3px; background: #171b16; box-shadow: 0 6px 18px rgba(0,0,0,.55); grid-template-rows: auto auto minmax(0,1fr) auto; }
+.filter-dropdown-search { width: 100%; height: 28px; }
+.filter-dropdown-actions { display: flex; gap: .3rem; }
+.filter-dropdown-actions button { flex: 1 1 0; height: 26px; color: #aeb2a8; font-size: .64rem; font-weight: 700; }
+.filter-dropdown-actions button:hover { border-color: #76652f; color: #fff2c5; }
+.filter-dropdown-list { display: block; margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; }
+.filter-dropdown-item label { display: flex; align-items: center; gap: .4rem; padding: .2rem .25rem; border-radius: 2px; color: #cfd2c8; cursor: pointer; font-size: .7rem; line-height: 1.15; }
+.filter-dropdown-item label:hover { background: #262b24; color: #fff2c5; }
+.filter-dropdown-item input { flex: 0 0 auto; accent-color: #ddbf5b; }
+.filter-dropdown-item img { width: 20px; height: 20px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
+.filter-dropdown-close { height: 26px; color: #aeb2a8; font-size: .64rem; font-weight: 700; }
+.filter-dropdown-close:hover { border-color: #76652f; color: #fff2c5; }
+
 .comparison-filterbar { display: flex; grid-column: 1; width: 100%; min-height: 40px; align-items: center; gap: .35rem; padding: .32rem .75rem; overflow-x: auto; border-top: 1px solid #292e29; background: #121613; scrollbar-width: thin; }
 .comparison-filter-summary { flex: 0 0 auto; margin-right: .25rem; color: #9fa39a; font-size: .68rem; text-transform: uppercase; white-space: nowrap; }
 .comparison-filter-summary strong { color: #efd471; font-size: .78rem; }

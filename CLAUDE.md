@@ -59,6 +59,39 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 
 ### Design decisions that must not be undone
 
+- **Filters are multi-select sets, and an EMPTY set means "unfiltered".** `TraderFilter` and
+  `MapFilter` are `IReadOnlySet<string>`; a populated set is a **union (OR)**, never an
+  intersection. Two selected maps show quests on either one — an intersection would show
+  nothing, because almost no quest is on two maps.
+- **Never change the singular `TraderFilter`/`MapFilter` fields on `QuestMapSettings` into
+  collections.** The multi-select values live in *added* `TraderFilters`/`MapFilters`
+  properties. A stored `"traderFilter": "abc"` deserialised into a collection throws
+  `JsonException`, and `QuestMapSettingsStorage` treats that as "no settings" — silently
+  wiping every saved preference for every existing user. Guarded by
+  `MultiSelectFilterTests.StoredJsonFromAnOlderBuild_StillDeserialises`.
+- **The singular field is written only when exactly one thing is selected**, so an older
+  build never reads a silently narrowed filter.
+- **The render signature key sorts filter ids before joining** (`FilterKey`). Sets have no
+  defined order; hashing one directly makes an identical selection look like a change and
+  forces a full graph redraw.
+- **Core's `QuestVisibilityOptions.TraderId` stays a single `string?`.** It is shared with
+  the BepInEx client. A lone trader selection delegates to Core exactly as before; a wider
+  selection is narrowed in the app layer, the same asymmetry the map filter already uses.
+- **`PruneUnselectableMapFilter` must run from BOTH `SetData` and `ApplySettings`.** Either
+  can be the call that first brings a restored filter together with real data — settings are
+  applied on either side of `SetData`. It previously ran only in `SetData`, so a stale map id
+  restored afterwards filtered everything away against an unselectable option. Guarded by
+  `MultiSelectFilterTests.SetData_DropsRestoredMapIdsTheLoadedProfilesCannotOffer_ButKeepsTheRest`.
+- **Compare-mode slot labels come from `State.PrimaryShortLabel`/`ComparisonShortLabel`, and
+  nothing may branch on their text.** `QuestDetails` used to pick the slot CSS class with
+  `label == "A"`; the helpers now take `bool isPrimary`. Two profiles can share a two-letter
+  prefix ("Scav1"/"Scav2" both give "Sc"), so the label cannot identify the slot.
+- **`FilterDropdown` renders no panel while `Disabled`.** Disabling only the trigger button
+  left an already-open panel live during focus mode, where the state setters ignore changes —
+  the checkbox moved and nothing filtered.
+- **`FilterDropdown` list items need `@key="item.Id"`.** Without it Blazor reuses `<li>` DOM
+  positionally, and narrowing the search can carry a checkbox's state onto a different row.
+
 - **Trader gap is a per-quest set difference, never a max-completed-depth comparison.** The
   original implementation compared "deepest completed quest depth" per trader and reported *zero
   gaps* for two real level-38 profiles that differed on 15 quests, because both had completed one

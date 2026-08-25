@@ -184,5 +184,11 @@
   "exclusion.permanent": "permanent",
   "time.seconds": "{value} seconds",
   "metrics.summary": "{visible}/{applicable} quests · {edges} edges · layout {layout} ms · overlay {overlay} ms · render {render} ms",
-  "metrics.overview": " · overview mode"
+  "metrics.overview": " · overview mode",
+  "filter.selectAll": "Select all",
+  "filter.clear": "Clear",
+  "filter.selectedCount": "{0} selected",
+  "filter.close": "Close",
+  "trader.search": "Search traders",
+  "map.search": "Search maps"
 }

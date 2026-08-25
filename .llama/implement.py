@@ -45,6 +45,25 @@ def ask(base_url: str, system: str, user: str, max_tokens: int, temperature: flo
     return choice["message"]["content"]
 
 
+# Build failures the model can do nothing about. An unset SPT_ROOT once cost four full
+# attempts: every one regenerated fine, every one hit the same project-level error before
+# the compiler ever reached the generated file, and the model had no way to tell. Bail
+# out and say so instead of burning the attempt budget on an unfixable error.
+ENVIRONMENT_ERRORS = (
+    "set eftinstallroot",
+    "set sptinstallroot",
+    "spt_root",
+    "sdk not found",
+    "msb1009",   # project file does not exist
+    "nu1101",    # package not found
+)
+
+
+def is_environment_failure(output: str) -> bool:
+    lowered = output.lower()
+    return any(marker in lowered for marker in ENVIRONMENT_ERRORS)
+
+
 def compress_errors(output: str, limit: int = 14) -> str:
     """Extract actionable feedback from a build OR a test run.
 
@@ -114,7 +133,16 @@ def main() -> int:
             print(f"BUILD OK on attempt {attempt}")
             return 0
 
-        errors = compress_errors(proc.stdout + "\n" + proc.stderr)
+        combined = proc.stdout + "\n" + proc.stderr
+        errors = compress_errors(combined)
+        if is_environment_failure(combined):
+            print("  build failed for an ENVIRONMENT reason, not the generated code:")
+            print(errors)
+            print("ABORTED: fix the environment and re-run. No further attempts made.")
+            if backup is not None:
+                out.write_text(backup, encoding="utf-8", newline="\n")
+                print("restored previous file contents")
+            return 2
         print(f"  build failed:\n{errors}", flush=True)
         # Full spec again, plus the failed attempt and its errors.
         prompt = (

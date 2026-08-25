@@ -16,8 +16,8 @@
                                 <strong>@series.SeriesName</strong>
                                 <span class="catchup-series-total">/@series.TotalParts</span>
                             </div>
-                            @RenderSeriesRow(State.Profile?.Nickname ?? "A", series.PrimaryFurthest, series.TotalParts, "primary")
-                            @RenderSeriesRow(State.ComparisonProfile?.Nickname ?? "B", series.ComparisonFurthest, series.TotalParts, "comparison")
+                            @RenderSeriesRow(State.Profile?.Nickname ?? State.PrimaryShortLabel, series.PrimaryFurthest, series.TotalParts, "primary")
+                            @RenderSeriesRow(State.ComparisonProfile?.Nickname ?? State.ComparisonShortLabel, series.ComparisonFurthest, series.TotalParts, "comparison")
                         </li>
                     }
                 </ol>

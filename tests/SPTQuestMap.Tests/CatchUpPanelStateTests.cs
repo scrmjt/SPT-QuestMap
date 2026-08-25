@@ -12,6 +12,10 @@ namespace SPTQuestMap.Tests;
 [TestFixture]
 public sealed class CatchUpPanelStateTests
 {
+    /// <summary>A single-value filter selection, for tests written before multi-select.</summary>
+    private static IReadOnlySet<string> Only(string id) => new HashSet<string>(new[] { id }, StringComparer.Ordinal);
+
+    private static IReadOnlySet<string> NoFilter => new HashSet<string>(StringComparer.Ordinal);
     [Test]
     public void SharedMapRankings_RanksMapsWhereBothProfilesStillNeedARaid()
     {
@@ -98,14 +102,14 @@ public sealed class CatchUpPanelStateTests
 
         Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EquivalentTo(new[] { "trader-a", "trader-b" }));
 
-        state.SetMapFilter("customs");
+        state.SetMapFilter(Only("customs"));
         Assert.Multiple(() =>
         {
-            Assert.That(state.MapFilter, Is.EqualTo("customs"));
+            Assert.That(state.MapFilter, Is.EquivalentTo(new[] { "customs" }));
             Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EqualTo(new[] { "trader-a" }));
         });
 
-        state.SetMapFilter(string.Empty);
+        state.SetMapFilter(NoFilter);
         Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EquivalentTo(new[] { "trader-a", "trader-b" }));
     }
 
@@ -120,7 +124,7 @@ public sealed class CatchUpPanelStateTests
         ]);
         var before = state.SharedMapRankings.Select(ranking => ranking.MapId).ToArray();
 
-        state.SetMapFilter("customs");
+        state.SetMapFilter(Only("customs"));
 
         Assert.That(state.SharedMapRankings.Select(ranking => ranking.MapId), Is.EqualTo(before));
     }
@@ -135,7 +139,7 @@ public sealed class CatchUpPanelStateTests
         };
         var state = BuildState(quests);
         state.SetCatchUpExpanded(true);
-        state.SetMapFilter("customs");
+        state.SetMapFilter(Only("customs"));
 
         // Round-trip through the real localStorage payload, not just the settings record.
         var json = QuestMapSettingsStorage.Serialize(state.CaptureSettings("profile", "en", "comparison", true));
@@ -145,7 +149,7 @@ public sealed class CatchUpPanelStateTests
         Assert.Multiple(() =>
         {
             Assert.That(restored.CatchUpExpanded, Is.True);
-            Assert.That(restored.MapFilter, Is.EqualTo("customs"));
+            Assert.That(restored.MapFilter, Is.EquivalentTo(new[] { "customs" }));
             // The restored filter must actually be applied, not just stored.
             Assert.That(restored.CatchUpChains.Select(chain => chain.TraderId), Is.EqualTo(new[] { "trader-a" }));
         });
@@ -165,7 +169,7 @@ public sealed class CatchUpPanelStateTests
         Assert.Multiple(() =>
         {
             Assert.That(state.CatchUpExpanded, Is.False);
-            Assert.That(state.MapFilter, Is.EqualTo(string.Empty));
+            Assert.That(state.MapFilter, Is.Empty);
             Assert.That(state.CatchUpChains, Is.Not.Empty);
         });
     }
@@ -176,7 +180,7 @@ public sealed class CatchUpPanelStateTests
         // Restoring a filter for a map this profile pair has no quests on must not
         // leave the panel filtered by an option the dropdown cannot even show.
         var state = BuildState([Quest("c1", "trader-a", "customs", "Customs", primary: "Available", comparison: "Completed")]);
-        state.SetMapFilter("customs");
+        state.SetMapFilter(Only("customs"));
 
         state.SetData(
             BuildTopology([Quest("w1", "trader-b", "woods", "Woods", primary: "Available", comparison: "Completed")]),
@@ -185,7 +189,7 @@ public sealed class CatchUpPanelStateTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(state.MapFilter, Is.EqualTo(string.Empty));
+            Assert.That(state.MapFilter, Is.Empty);
             Assert.That(state.CatchUpChains.Select(chain => chain.TraderId), Is.EqualTo(new[] { "trader-b" }));
         });
     }
@@ -220,7 +224,7 @@ public sealed class CatchUpPanelStateTests
         ]);
         Assert.That(state.VisibleIds, Does.Contain("c1").And.Contain("w1"));
 
-        state.SetMapFilter("customs");
+        state.SetMapFilter(Only("customs"));
 
         Assert.Multiple(() =>
         {
@@ -243,7 +247,7 @@ public sealed class CatchUpPanelStateTests
 
         Assert.That(state.SeriesProgress.Select(entry => entry.SeriesName), Is.EquivalentTo(new[] { "Gunsmith", "Spa Tour" }));
 
-        state.SetMapFilter("customs");
+        state.SetMapFilter(Only("customs"));
 
         var gunsmith = state.SeriesProgress.Single();
         Assert.Multiple(() =>
@@ -259,22 +263,22 @@ public sealed class CatchUpPanelStateTests
         new($"{series}-{part}", traderId, [new QuestMapReferenceDto(mapId, mapName, null)], OutOfRaid: false, primary, comparison)
         { DisplayName = $"{series} - Part {part}" };
 
-    private sealed record QuestFact(string Id, string TraderId, QuestMapReferenceDto[] Maps, bool OutOfRaid, string Primary, string Comparison)
+    internal sealed record QuestFact(string Id, string TraderId, QuestMapReferenceDto[] Maps, bool OutOfRaid, string Primary, string Comparison)
     {
         /// <summary>Quest name as shown; series grouping is parsed from it. Defaults to the id.</summary>
         public string? DisplayName { get; init; }
     }
 
-    private static QuestFact Quest(string id, string traderId, string mapId, string mapName, string primary, string comparison) =>
+    internal static QuestFact Quest(string id, string traderId, string mapId, string mapName, string primary, string comparison) =>
         new(id, traderId, [new QuestMapReferenceDto(mapId, mapName, null)], OutOfRaid: false, primary, comparison);
 
-    private static QuestFact MultiMapQuest(string id, string traderId, string primary, string comparison, params (string Id, string Name)[] maps) =>
+    internal static QuestFact MultiMapQuest(string id, string traderId, string primary, string comparison, params (string Id, string Name)[] maps) =>
         new(id, traderId, maps.Select(map => new QuestMapReferenceDto(map.Id, map.Name, null)).ToArray(), OutOfRaid: false, primary, comparison);
 
     private static QuestFact OutOfRaidQuest(string id, string traderId, string primary, string comparison) =>
         new(id, traderId, [], OutOfRaid: true, primary, comparison);
 
-    private static QuestMapPageState BuildState(QuestFact[] quests)
+    internal static QuestMapPageState BuildState(QuestFact[] quests)
     {
         var state = new QuestMapPageState();
         state.SetData(

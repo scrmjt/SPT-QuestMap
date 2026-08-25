@@ -33,3 +33,9 @@ STYLE
 OUTPUT
 - Return only code unless asked otherwise. No markdown fences around the whole answer
   unless the request asks for a file. No explanation before or after.
+
+## Environment the build needs
+
+`SPT_ROOT` must be set to the SPT install (`D:\SPT4013_Test`) or every project fails
+validation before the compiler ever reaches your file. If you are told the build failed
+with "Set EftInstallRoot or SPT_ROOT", that is not something your code can fix.

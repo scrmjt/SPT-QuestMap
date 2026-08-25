@@ -18,6 +18,10 @@ namespace SPTQuestMap.Tests;
 
 public sealed class BlazorMigrationTests
 {
+    /// <summary>A single-value filter selection, for tests written before multi-select.</summary>
+    private static IReadOnlySet<string> Only(string id) => new HashSet<string>(new[] { id }, StringComparer.Ordinal);
+
+    private static IReadOnlySet<string> NoFilter => new HashSet<string>(StringComparer.Ordinal);
     [Test]
     public void QuestMapRouteIsOwnedByRazor()
     {
@@ -395,7 +399,7 @@ public sealed class BlazorMigrationTests
             [State("source", "InProgress"), State("target", "PrerequisiteGated")], [], ["source"], ["source", "target"]);
         var state = new QuestMapPageState();
         state.SetData(topology, primary, comparison);
-        state.SetTraderFilter("trader-a");
+        state.SetTraderFilter(Only("trader-a"));
 
         Assert.That(state.VisibleIds, Does.Contain("target"));
 
@@ -836,7 +840,7 @@ public sealed class BlazorMigrationTests
         });
 
         state.SetShowFinished(true);
-        state.SetTraderFilter("trader-b");
+        state.SetTraderFilter(Only("trader-b"));
         Assert.Multiple(() =>
         {
             Assert.That(state.VisibleIds, Does.Not.Contain("daily-available"));
@@ -844,7 +848,7 @@ public sealed class BlazorMigrationTests
             Assert.That(state.VisibleIds, Does.Contain("weekly-expired"));
         });
 
-        state.SetTraderFilter(string.Empty);
+        state.SetTraderFilter(NoFilter);
         state.SetSearch("weekly");
         Assert.Multiple(() =>
         {

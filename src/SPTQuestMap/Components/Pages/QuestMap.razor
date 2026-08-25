@@ -173,7 +173,7 @@
     private Task SetLevelEligibleAsync(bool value) => ChangeViewAsync(() => State.SetLevelEligibleOnly(value));
     private Task SetComparisonFilterAsync(QuestComparisonFilter value) => ChangeViewAsync(() => State.SetComparisonFilter(value));
     private Task SetSearchAsync(string value) => ChangeViewAsync(() => State.SetSearch(value));
-    private Task SetTraderAsync(string value) => ChangeViewAsync(() => State.SetTraderFilter(value));
+    private Task SetTraderAsync(IReadOnlySet<string> value) => ChangeViewAsync(() => State.SetTraderFilter(value));
     private Task SetDrawerExpandedAsync(bool value) => ChangeViewAsync(() => State.SetInProgressExpanded(value));
     // Catch-up panel state is Blazor-rendered and absent from QuestGraphUpdate, so it
     // must not push a full graph payload over JS interop the way ChangeViewAsync does.
@@ -185,7 +185,7 @@
 
     // The map filter narrows the graph as well as the panel, so unlike the panel's own
     // expand state it does need the renderer to resynchronise.
-    private Task SetMapAsync(string value) => ChangeViewAsync(() => State.SetMapFilter(value));
+    private Task SetMapAsync(IReadOnlySet<string> value) => ChangeViewAsync(() => State.SetMapFilter(value));
 
     private async Task ChangeViewAsync(Action change)
     {

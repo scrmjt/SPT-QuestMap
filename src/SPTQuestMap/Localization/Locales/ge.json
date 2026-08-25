@@ -180,5 +180,11 @@
   "exclusion.permanent": "dauerhaft",
   "time.seconds": "{value} Sekunden",
   "metrics.summary": "{visible}/{applicable} Aufträge · {edges} Kanten · Anordnung {layout} ms · Status {overlay} ms · Darstellung {render} ms",
-  "metrics.overview": " · Übersichtsmodus"
+  "metrics.overview": " · Übersichtsmodus",
+  "filter.selectAll": "Alle auswählen",
+  "filter.clear": "Zurücksetzen",
+  "filter.selectedCount": "{0} ausgewählt",
+  "filter.close": "Schließen",
+  "trader.search": "Händler suchen",
+  "map.search": "Karten suchen"
 }

@@ -1,3 +1,5 @@
+@using System.Linq
+
 <div class="filterbar">
     <div class="filter-tools">
         <div class="filter-toggles">
@@ -11,35 +13,38 @@
         <label class="field search-field"><span class="sr-only">@Localizer["search.label"]</span><input type="search" value="@State.Search" placeholder="@Localizer["search.placeholder"]" autocomplete="off" @oninput="OnSearchInput"></label>
     </div>
     <div class="filter-separator" aria-hidden="true"></div>
-    <div class="trader-options @(State.FocusMode ? "disabled" : null)" role="radiogroup" aria-label="@Localizer["trader.label"]">
-        <button class="trader-option @(State.TraderFilter.Length == 0 ? "selected" : null)" type="button" role="radio" aria-checked="@(State.TraderFilter.Length == 0 ? "true" : "false")" title="@Localizer["trader.all"]" disabled="@State.FocusMode" @onclick="() => TraderChanged.InvokeAsync(string.Empty)">
-            <img src="/files/trader/avatar/unknown.png" alt=""><span>@Localizer["trader.allShort"]</span>
-        </button>
-        @foreach (var trader in State.FilterTraders())
+    @{ var maps = State.FilterMaps(); }
+    <div class="filter-dropdowns">
+        <label class="filter-dropdown-label">
+            <span class="sr-only">@Localizer["trader.label"]</span>
+            <FilterDropdown Items="@TraderItems()"
+                            Selected="@State.TraderFilter"
+                            AllLabel="@Localizer["trader.allShort"]"
+                            SearchPlaceholder="@Localizer["trader.search"]"
+                            SelectAllLabel="@Localizer["filter.selectAll"]"
+                            ClearLabel="@Localizer["filter.clear"]"
+                            SelectedCountFormat="@Localizer["filter.selectedCount"]"
+                            CloseLabel="@Localizer["filter.close"]"
+                            Disabled="@State.FocusMode"
+                            SelectionChanged="TraderChanged" />
+        </label>
+        @if (maps.Count > 0)
         {
-            var selected = trader.Id == State.TraderFilter;
-            <button class="trader-option @(selected ? "selected" : null)" type="button" role="radio" aria-checked="@selected.ToString().ToLowerInvariant()" title="@trader.Name" disabled="@State.FocusMode" @onclick="() => TraderChanged.InvokeAsync(trader.Id)">
-                <img src="@(trader.ImageUrl ?? "/files/trader/avatar/unknown.png")" alt=""><span>@trader.Name</span>
-            </button>
+            <label class="filter-dropdown-label">
+                <span class="sr-only">@Localizer["map.label"]</span>
+                <FilterDropdown Items="@MapItems(maps)"
+                                Selected="@State.MapFilter"
+                                AllLabel="@Localizer["map.allShort"]"
+                                SearchPlaceholder="@Localizer["map.search"]"
+                                SelectAllLabel="@Localizer["filter.selectAll"]"
+                                ClearLabel="@Localizer["filter.clear"]"
+                                SelectedCountFormat="@Localizer["filter.selectedCount"]"
+                                CloseLabel="@Localizer["filter.close"]"
+                                Disabled="@State.FocusMode"
+                                SelectionChanged="MapChanged" />
+            </label>
         }
     </div>
-    @{ var maps = State.FilterMaps(); }
-    @if (maps.Count > 0)
-    {
-        <div class="filter-separator" aria-hidden="true"></div>
-        <div class="map-options @(State.FocusMode ? "disabled" : null)" role="radiogroup" aria-label="@Localizer["map.label"]">
-            <button class="map-option @(State.MapFilter.Length == 0 ? "selected" : null)" type="button" role="radio" aria-checked="@(State.MapFilter.Length == 0 ? "true" : "false")" title="@Localizer["map.all"]" disabled="@State.FocusMode" @onclick="() => MapChanged.InvokeAsync(string.Empty)">
-                <span>@Localizer["map.allShort"]</span>
-            </button>
-            @foreach (var map in maps)
-            {
-                var mapSelected = map.Id == State.MapFilter;
-                <button class="map-option @(mapSelected ? "selected" : null)" type="button" role="radio" aria-checked="@mapSelected.ToString().ToLowerInvariant()" title="@map.Name" disabled="@State.FocusMode" @onclick="() => MapChanged.InvokeAsync(map.Id)">
-                    <span>@map.Name</span>
-                </button>
-            }
-        </div>
-    }
 </div>
 @if (State.CompareMode)
 {
@@ -64,14 +69,23 @@
     [Parameter] public EventCallback<bool> LevelEligibleChanged { get; set; }
     [Parameter] public EventCallback<QuestComparisonFilter> ComparisonFilterChanged { get; set; }
     [Parameter] public EventCallback<string> SearchChanged { get; set; }
-    [Parameter] public EventCallback<string> TraderChanged { get; set; }
-    [Parameter] public EventCallback<string> MapChanged { get; set; }
+    [Parameter] public EventCallback<IReadOnlySet<string>> TraderChanged { get; set; }
+    [Parameter] public EventCallback<IReadOnlySet<string>> MapChanged { get; set; }
 
     private Task OnSearchInput(ChangeEventArgs args) => SearchChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
 
     private static QuestComparisonFilter[] ComparisonFilters { get; } = Enum.GetValues<QuestComparisonFilter>();
 
     private string FilterLabel(QuestComparisonFilter filter) => Localizer[$"compare.filter.{filter}"];
+
+    private IReadOnlyList<FilterDropdown.FilterDropdownItem> TraderItems()
+        => State.FilterTraders()
+            .Select(trader => new FilterDropdown.FilterDropdownItem(
+                trader.Id, trader.Name, trader.ImageUrl ?? "/files/trader/avatar/unknown.png"))
+            .ToArray();
+
+    private static IReadOnlyList<FilterDropdown.FilterDropdownItem> MapItems(IReadOnlyList<QuestMapReferenceDto> maps)
+        => maps.Select(map => new FilterDropdown.FilterDropdownItem(map.Id, map.Name)).ToArray();
 
     private int FilterCount(QuestComparisonFilter filter) => filter switch
     {

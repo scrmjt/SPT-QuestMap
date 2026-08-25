@@ -49,7 +49,7 @@ public sealed class QuestMapPageState
     public QuestDetailTextTab DetailTextTab { get; private set; }
     public QuestComparisonFilter ComparisonFilter { get; private set; }
     public string Search { get; private set; } = string.Empty;
-    public string TraderFilter { get; private set; } = string.Empty;
+    public IReadOnlySet<string> TraderFilter { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
     public string? SelectedId { get; private set; }
     public string? FocusedId { get; private set; }
     public HashSet<string> VisibleIds { get; } = new(StringComparer.Ordinal);
@@ -66,9 +66,19 @@ public sealed class QuestMapPageState
     public int DifferenceCount { get; private set; }
     public IReadOnlyList<CatchUpChainDto> CatchUpChains { get; private set; } = [];
     public bool CatchUpExpanded { get; private set; }
-    public string MapFilter { get; private set; } = string.Empty;
+    public IReadOnlySet<string> MapFilter { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<SharedMapRankingDto> SharedMapRankings { get; private set; } = [];
     public IReadOnlyList<QuestSeriesProgressDto> SeriesProgress { get; private set; } = [];
+
+    /// <summary>
+    /// Compare-mode slot labels: the first two characters of each profile's nickname,
+    /// falling back to "A"/"B" when a profile has no usable nickname. These are display
+    /// text only — never branch on them to tell the two slots apart, because two profiles
+    /// can easily share a prefix ("Scav1"/"Scav2" both yield "Sc").
+    /// </summary>
+    public string PrimaryShortLabel => ProfileLabelRules.ShortLabel(Profile?.Nickname, "A");
+
+    public string ComparisonShortLabel => ProfileLabelRules.ShortLabel(ComparisonProfile?.Nickname, "B");
 
     public void ApplySettings(QuestMapSettings settings)
     {
@@ -79,10 +89,11 @@ public sealed class QuestMapPageState
         InProgressExpanded = settings.InProgressExpanded;
         DetailTextTab = settings.DetailTextTab;
         Search = settings.Search ?? string.Empty;
-        TraderFilter = settings.TraderFilter ?? string.Empty;
+        TraderFilter = ReadFilterSet(settings.TraderFilters, settings.TraderFilter);
         ComparisonFilter = settings.ComparisonFilter;
         CatchUpExpanded = settings.CatchUpExpanded;
-        MapFilter = settings.MapFilter ?? string.Empty;
+        MapFilter = ReadFilterSet(settings.MapFilters, settings.MapFilter);
+        PruneUnselectableMapFilter();
         _profileSettings.Clear();
         foreach (var pair in settings.Profiles ?? new Dictionary<string, QuestProfileUiSettings>()) _profileSettings[pair.Key] = pair.Value;
         _comparePairSettings.Clear();
@@ -98,7 +109,7 @@ public sealed class QuestMapPageState
     public QuestMapSettings CaptureSettings(string? selectedProfileId, string language, string? comparisonProfileId = null, bool? compareEnabled = null)
     {
         CaptureCurrentProfileSettings();
-        return new QuestMapSettings(selectedProfileId, language, ShowAllFuture, ShowFinished, LevelEligibleOnly, InProgressExpanded, Search, TraderFilter, new Dictionary<string, QuestProfileUiSettings>(_profileSettings, StringComparer.Ordinal))
+        return new QuestMapSettings(selectedProfileId, language, ShowAllFuture, ShowFinished, LevelEligibleOnly, InProgressExpanded, Search, SingleOrEmpty(TraderFilter), new Dictionary<string, QuestProfileUiSettings>(_profileSettings, StringComparer.Ordinal))
         {
             ShowRepeatables = ShowRepeatables,
             CompareEnabled = compareEnabled ?? CompareMode,
@@ -106,7 +117,9 @@ public sealed class QuestMapPageState
             ComparisonFilter = ComparisonFilter,
             DetailTextTab = DetailTextTab,
             CatchUpExpanded = CatchUpExpanded,
-            MapFilter = MapFilter,
+            MapFilter = SingleOrEmpty(MapFilter),
+            TraderFilters = TraderFilter.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+            MapFilters = MapFilter.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             ComparePairs = new Dictionary<string, QuestProfileUiSettings>(_comparePairSettings, StringComparer.Ordinal),
         };
     }
@@ -142,7 +155,7 @@ public sealed class QuestMapPageState
             StringComparer.Ordinal);
         // A restored filter can name a map the loaded profiles have no quests on. Drop
         // it rather than filtering everything away against an unselectable option.
-        if (MapFilter.Length > 0 && !FilterMaps().Any(map => map.Id == MapFilter)) MapFilter = string.Empty;
+        PruneUnselectableMapFilter();
         BuildComparisons();
         RebuildCatchUpModel();
         _incoming = GroupEdges(topology.Edges, edge => edge.TargetId);
@@ -158,16 +171,16 @@ public sealed class QuestMapPageState
     public void SetInProgressExpanded(bool value) => InProgressExpanded = value;
     public void SetComparisonFilter(QuestComparisonFilter value) { if (!FocusMode && CompareMode) ComparisonFilter = value; Recalculate(); }
     public void SetCatchUpExpanded(bool value) => CatchUpExpanded = value;
-    public void SetMapFilter(string? value)
+    public void SetMapFilter(IReadOnlySet<string>? value)
     {
         if (FocusMode) return;
-        MapFilter = value ?? string.Empty;
+        MapFilter = Freeze(value);
         Recalculate();
         BuildCatchUpChains();
         BuildSeriesProgress();
     }
     public void SetSearch(string? value) { Search = value ?? string.Empty; Recalculate(); }
-    public void SetTraderFilter(string? value) { if (!FocusMode) TraderFilter = value ?? string.Empty; Recalculate(); }
+    public void SetTraderFilter(IReadOnlySet<string>? value) { if (!FocusMode) TraderFilter = Freeze(value); Recalculate(); }
 
     public bool SelectQuest(string? id)
     {
@@ -340,7 +353,7 @@ public sealed class QuestMapPageState
                     ShowAllFuture,
                     ShowFinished,
                     LevelEligibleOnly,
-                    TraderFilter,
+                    TraderFilter.Count == 1 ? TraderFilter.First() : null,
                     Search,
                     SelectedId,
                     FocusedId,
@@ -349,7 +362,11 @@ public sealed class QuestMapPageState
             // Applied here rather than inside the shared Core rules: QuestVisibilityNode
             // carries no location data, and the map filter is browser-only — the native
             // client has its own location controls.
-            if (!FocusMode && MapFilter.Length > 0)
+            if (!FocusMode && TraderFilter.Count > 1)
+            {
+                VisibleIds.RemoveWhere(id => id != SelectedId && !PrerequisiteIds.Contains(id) && !MatchesTraderFilter(id));
+            }
+            if (!FocusMode && MapFilter.Count > 0)
             {
                 VisibleIds.RemoveWhere(id => id != SelectedId && !PrerequisiteIds.Contains(id) && !MatchesMapFilter(id));
             }
@@ -362,8 +379,9 @@ public sealed class QuestMapPageState
             : Profile.DefaultVisibleQuestIds.Concat(ComparisonProfile?.DefaultVisibleQuestIds ?? []);
         var search = Search.Trim();
         var focusMode = FocusIds is not null;
-        var trader = focusMode ? string.Empty : TraderFilter;
-        var mapUnfiltered = focusMode || MapFilter.Length == 0;
+        var traderUnfiltered = focusMode || TraderFilter.Count == 0;
+        var traders = TraderFilter;
+        var mapUnfiltered = focusMode || MapFilter.Count == 0;
         var showFinished = focusMode || ShowFinished;
         var levelOnly = !focusMode && LevelEligibleOnly;
 
@@ -376,7 +394,7 @@ public sealed class QuestMapPageState
             var selectionContext = selected || PrerequisiteIds.Contains(id) || SuccessorIds.Contains(id);
             if (!showFinished && !revealFinished && IsFinishedForEveryApplicableProfile(node, id)) return;
             if (!selected && levelOnly && IsLevelGatedForEveryApplicableProfile(id)) return;
-            if (!selected && trader.Length > 0 && node.TraderId != trader && !PrerequisiteIds.Contains(id)) return;
+            if (!selected && !traderUnfiltered && !traders.Contains(node.TraderId) && !PrerequisiteIds.Contains(id)) return;
             if (!selected && !mapUnfiltered && !MatchesMapFilter(node) && !PrerequisiteIds.Contains(id)) return;
             if (!selected && search.Length > 0 && !$"{node.Name} {node.TraderName} {node.Id}".Contains(search, StringComparison.OrdinalIgnoreCase)) return;
             if (CompareMode) _comparisonScopeIds.Add(id);
@@ -391,10 +409,11 @@ public sealed class QuestMapPageState
         }
         foreach (var id in focusMode ? FocusIds! : PrerequisiteIds) Consider(id);
 
-        if (!focusMode && trader.Length > 0)
+        if (!focusMode && !traderUnfiltered)
         {
             var visibleTraderQuestIds = VisibleIds
-                .Where(id => _nodeById.GetValueOrDefault(id)?.TraderId == trader
+                .Where(id => _nodeById.GetValueOrDefault(id) is { } traderNode
+                    && traders.Contains(traderNode.TraderId)
                     && IsBoundaryForAnyApplicableProfile(id))
                 .ToArray();
 
@@ -654,12 +673,66 @@ public sealed class QuestMapPageState
             .ToArray();
     }
 
+    /// <summary>
+    /// A stable, order-independent key for a filter set. Sets have no defined order, so
+    /// hashing them directly would make an identical selection look like a change and
+    /// force a redraw.
+    /// </summary>
+    private static string FilterKey(IReadOnlySet<string> ids)
+        => ids.Count == 0 ? string.Empty : string.Join(',', ids.OrderBy(id => id, StringComparer.Ordinal));
+
+    private static IReadOnlySet<string> Freeze(IReadOnlySet<string>? value)
+        => value is null || value.Count == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(value, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Reads a persisted filter, preferring the multi-select list and falling back to the
+    /// single-value field written before multi-select existed. Settings saved by an older
+    /// build carry only the singular field, and dropping it would silently reset the user's
+    /// filter on first load after upgrading.
+    /// </summary>
+    private static IReadOnlySet<string> ReadFilterSet(IReadOnlyList<string>? values, string? legacySingle)
+    {
+        if (values is { Count: > 0 }) return new HashSet<string>(values, StringComparer.Ordinal);
+        return string.IsNullOrEmpty(legacySingle)
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>([legacySingle], StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The value for the pre-multi-select singular settings field. Only a lone selection can
+    /// round-trip through it, so a wider selection writes empty rather than silently
+    /// narrowing itself for an older build that reads it.
+    /// </summary>
+    private static string SingleOrEmpty(IReadOnlySet<string> ids) => ids.Count == 1 ? ids.First() : string.Empty;
+
+    /// <summary>
+    /// Drops selected maps the loaded profiles have no quests on. A filter restored from
+    /// settings can name a map that is not in this profile pair's data at all, and keeping
+    /// it would filter everything away against an option the dropdown cannot even show.
+    /// Runs from both <see cref="SetData"/> and <see cref="ApplySettings"/> because either
+    /// can be the one that first brings a stale filter together with real data.
+    /// </summary>
+    private void PruneUnselectableMapFilter()
+    {
+        if (Topology is null || MapFilter.Count == 0) return;
+        var selectable = FilterMaps().Select(map => map.Id).ToHashSet(StringComparer.Ordinal);
+        if (MapFilter.All(selectable.Contains)) return;
+        MapFilter = MapFilter.Where(selectable.Contains).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>True when no trader is selected, or the quest belongs to one of them.</summary>
+    private bool MatchesTraderFilter(string questId)
+        => TraderFilter.Count == 0
+        || (_nodeById.TryGetValue(questId, out var node) && TraderFilter.Contains(node.TraderId));
+
     /// <summary>True when no map is selected, or the quest can be worked on that map.</summary>
     private bool MatchesMapFilter(QuestNodeDto node) => MatchesMapFilter(node.Id);
 
     private bool MatchesMapFilter(string questId) =>
-        MapFilter.Length == 0
-        || (_nodeMaps.TryGetValue(questId, out var maps) && maps.Any(map => map.Id == MapFilter));
+        MapFilter.Count == 0
+        || (_nodeMaps.TryGetValue(questId, out var maps) && maps.Any(map => MapFilter.Contains(map.Id)));
 
     /// <summary>
     /// Ranks raidable maps by how many quests both profiles still need a raid for
@@ -774,7 +847,7 @@ public sealed class QuestMapPageState
 
     private string ViewportScope() => Topology is null || Profile is null
         ? string.Empty
-        : string.Join('|', Topology.Version, Profile.ProfileId, ComparisonProfile?.ProfileId ?? string.Empty, ShowAllFuture ? 1 : 0, ShowFinished ? 1 : 0, ShowRepeatables && !CompareMode ? 1 : 0, LevelEligibleOnly ? 1 : 0, CompareMode ? ComparisonFilter : QuestComparisonFilter.AllQuests, TraderFilter, MapFilter, Search.Trim(), FocusedId ?? string.Empty, SelectedId ?? string.Empty);
+        : string.Join('|', Topology.Version, Profile.ProfileId, ComparisonProfile?.ProfileId ?? string.Empty, ShowAllFuture ? 1 : 0, ShowFinished ? 1 : 0, ShowRepeatables && !CompareMode ? 1 : 0, LevelEligibleOnly ? 1 : 0, CompareMode ? ComparisonFilter : QuestComparisonFilter.AllQuests, FilterKey(TraderFilter), FilterKey(MapFilter), Search.Trim(), FocusedId ?? string.Empty, SelectedId ?? string.Empty);
 
     private void CaptureCurrentProfileSettings()
     {
@@ -842,6 +915,8 @@ public sealed record QuestMapSettings(string? SelectedProfileId, string? Languag
     public QuestDetailTextTab DetailTextTab { get; init; }
     public bool CatchUpExpanded { get; init; }
     public string? MapFilter { get; init; } = string.Empty;
+    public IReadOnlyList<string>? TraderFilters { get; init; }
+    public IReadOnlyList<string>? MapFilters { get; init; }
     public IReadOnlyDictionary<string, QuestProfileUiSettings>? ComparePairs { get; init; } = new Dictionary<string, QuestProfileUiSettings>();
     public static QuestMapSettings Default { get; } = new(null, null, false, true, true, false, string.Empty, string.Empty, new Dictionary<string, QuestProfileUiSettings>());
 }

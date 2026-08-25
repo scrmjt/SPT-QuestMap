@@ -25,8 +25,8 @@
                                 <span class="in-progress-difference-label">@DifferenceLabel(comparison)</span>
                             }
                             <span class="in-progress-compare">
-                                @ProgressLane("A", quest.PrimaryState, State.IsPrimaryApplicable(quest.Node.Id))
-                                @ProgressLane("B", quest.ComparisonState, State.IsComparisonApplicable(quest.Node.Id))
+                                @ProgressLane(State.PrimaryShortLabel, quest.PrimaryState, State.IsPrimaryApplicable(quest.Node.Id))
+                                @ProgressLane(State.ComparisonShortLabel, quest.ComparisonState, State.IsComparisonApplicable(quest.Node.Id))
                             </span>
                         }
                         else

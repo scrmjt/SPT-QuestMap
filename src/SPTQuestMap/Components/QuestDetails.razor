@@ -193,8 +193,8 @@
         builder.OpenElement(sequence++, "table"); builder.AddAttribute(sequence++, "class", $"comparison-table {className}");
         builder.OpenElement(sequence++, "thead"); builder.OpenElement(sequence++, "tr");
         builder.OpenElement(sequence++, "th"); builder.AddAttribute(sequence++, "scope", "col"); builder.CloseElement();
-        AddProfileHeading("A", State.Profile?.Nickname ?? "-");
-        AddProfileHeading("B", State.ComparisonProfile?.Nickname ?? "-");
+        AddProfileHeading(true, State.Profile?.Nickname ?? "-");
+        AddProfileHeading(false, State.ComparisonProfile?.Nickname ?? "-");
         builder.CloseElement(); builder.CloseElement(); builder.OpenElement(sequence++, "tbody");
         foreach (var row in rows)
         {
@@ -206,10 +206,11 @@
         }
         builder.CloseElement(); builder.CloseElement();
 
-        void AddProfileHeading(string label, string nickname)
+        void AddProfileHeading(bool isPrimary, string nickname)
         {
+            var label = isPrimary ? State.PrimaryShortLabel : State.ComparisonShortLabel;
             builder.OpenElement(sequence++, "th"); builder.AddAttribute(sequence++, "scope", "col");
-            builder.OpenElement(sequence++, "span"); builder.AddAttribute(sequence++, "class", $"profile-slot {(label == "A" ? "primary-slot" : "comparison-slot")}"); builder.AddContent(sequence++, label); builder.CloseElement();
+            builder.OpenElement(sequence++, "span"); builder.AddAttribute(sequence++, "class", $"profile-slot {(isPrimary ? "primary-slot" : "comparison-slot")}"); builder.AddContent(sequence++, label); builder.CloseElement();
             builder.AddContent(sequence++, nickname); builder.CloseElement();
         }
     };
@@ -320,8 +321,8 @@
             builder.OpenElement(sequence++, "li"); if (item.Different) builder.AddAttribute(sequence++, "class", "different");
             builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "class", "objective-description rich-description"); builder.AddMarkupContent(sequence++, ObjectiveMarkup(item.Objective)); builder.CloseElement();
             builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "class", "objective-comparison");
-            AddObjectiveLane("A", item.Primary, primaryApplicable);
-            AddObjectiveLane("B", item.Comparison, comparisonApplicable);
+            AddObjectiveLane(true, item.Primary, primaryApplicable);
+            AddObjectiveLane(false, item.Comparison, comparisonApplicable);
             builder.CloseElement();
             if (ObjectiveDelta(item.Primary, item.Comparison) is { } delta)
             {
@@ -331,10 +332,11 @@
         }
         builder.CloseElement();
 
-        void AddObjectiveLane(string label, ObjectiveProgressDto? progress, bool applicable)
+        void AddObjectiveLane(bool isPrimary, ObjectiveProgressDto? progress, bool applicable)
         {
+            var label = isPrimary ? State.PrimaryShortLabel : State.ComparisonShortLabel;
             builder.OpenElement(sequence++, "span"); builder.AddAttribute(sequence++, "class", "objective-comparison-lane");
-            builder.OpenElement(sequence++, "b"); builder.AddAttribute(sequence++, "class", $"profile-slot {(label == "A" ? "primary-slot" : "comparison-slot")}"); builder.AddContent(sequence++, label); builder.CloseElement();
+            builder.OpenElement(sequence++, "b"); builder.AddAttribute(sequence++, "class", $"profile-slot {(isPrimary ? "primary-slot" : "comparison-slot")}"); builder.AddContent(sequence++, label); builder.CloseElement();
             if (!applicable) builder.AddContent(sequence++, Localizer["state.NotApplicable"]);
             else
             {
