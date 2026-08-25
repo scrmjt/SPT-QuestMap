@@ -31,7 +31,7 @@ dotnet test  src/SPTQuestMap/SPTQuestMap.slnx -c Release
 
 Deployment: `scripts/deploy.ps1 -Target Server -SptRoot D:\SPT4013_Test` **run under `pwsh`**.
 It builds, tests, stages, hash-compares, and copies into
-`D:\SPT4013_Test\SPT\user\mods\SPT-QuestMap`. It restarts the server only if one was already
+`D:\SPT4013_Test\SPT\user\mods\SPT-QuestMap`. **Stop the server BEFORE deploying.** A running `SPT.Server.exe` holds `SPTQuestMap.dll` open, the copy fails with "being used by another process", and the script still restarts a server - leaving stale code running that looks freshly deployed. Order is: stop, deploy, start. The exe lives at `D:\SPT4013_Test\SPT\SPT.Server.exe`, under `SPT\`, not the install root. It restarts the server only if one was already
 running; otherwise start it yourself with `Start-Process` so it gets a real console — launching
 `SPT.Server.exe` from a redirected/non-interactive shell dies with
 `System.Exception: Unable to get console mode`.
@@ -89,6 +89,13 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 - **`FilterDropdown` renders no panel while `Disabled`.** Disabling only the trigger button
   left an already-open panel live during focus mode, where the state setters ignore changes —
   the checkbox moved and nothing filtered.
+- **`.filterbar` must keep `overflow: visible`.** It was `hidden` to contain the horizontally
+  scrolling trader row the dropdowns replaced. With dropdowns, `hidden` clips the absolutely
+  positioned panel to the bar's 78px: only the search box shows and the checkbox list is
+  unreachable. The feature builds, tests green, and is unusable. Found only in a browser.
+- **No numeric CSS escapes in this stylesheet.** A caret written as a CSS escape sequence
+  lost its backslash passing through a shell heredoc and became a literal 0x15 control byte.
+  Paste the character itself instead.
 - **`FilterDropdown` list items need `@key="item.Id"`.** Without it Blazor reuses `<li>` DOM
   positionally, and narrowing the search can carry a checkbox's state onto a different row.
 
