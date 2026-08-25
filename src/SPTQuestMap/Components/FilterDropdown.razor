@@ -1,0 +1,124 @@
+@using System.Collections.Generic
+@using System.Linq
+
+<div class="filter-dropdown">
+    <button class="filter-dropdown-button" type="button" aria-haspopup="listbox"
+            aria-expanded="@IsOpen.ToString().ToLowerInvariant()"
+            disabled="@Disabled" @onclick="Toggle">
+        @GetSummaryText()
+    </button>
+    @if (IsOpen)
+    {
+        <div class="filter-dropdown-panel">
+            <input class="filter-dropdown-search" type="search" @bind="SearchTerm" @bind:event="oninput" placeholder="@SearchPlaceholder" />
+            <div class="filter-dropdown-actions">
+                <button type="button" @onclick="SelectAll"> @SelectAllLabel </button>
+                <button type="button" @onclick="Clear"> @ClearLabel </button>
+            </div>
+            <ul class="filter-dropdown-list">
+                @foreach (var item in GetVisibleItems())
+                {
+                    <li class="filter-dropdown-item">
+                        <label>
+                            <input type="checkbox" checked="@IsItemSelected(item.Id)" @onchange="@(e => ToggleItem(item.Id))" />
+                            @if (item.ImageUrl != null)
+                            {
+                                <img src="@item.ImageUrl" alt="" />
+                            }
+                            @item.Label
+                        </label>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    public sealed record FilterDropdownItem(string Id, string Label, string? ImageUrl = null);
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<FilterDropdownItem> Items { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlySet<string> Selected { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string AllLabel { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string SearchPlaceholder { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string SelectAllLabel { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string ClearLabel { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<IReadOnlySet<string>> SelectionChanged { get; set; }
+
+    private bool IsOpen { get; set; } = false;
+    private string SearchTerm { get; set; } = string.Empty;
+
+    private void Toggle()
+    {
+        IsOpen = !IsOpen;
+    }
+
+    private string GetSummaryText()
+    {
+        if (Selected.Count == 0)
+        {
+            return AllLabel;
+        }
+        else if (Selected.Count == 1)
+        {
+            var selectedItem = Items.FirstOrDefault(i => i.Id == Selected.First());
+            return selectedItem?.Label ?? AllLabel;
+        }
+        else
+        {
+            return $"{Selected.Count} selected";
+        }
+    }
+
+    private IEnumerable<FilterDropdownItem> GetVisibleItems()
+    {
+        return Items.Where(i => string.IsNullOrEmpty(SearchTerm) || i.Label.IndexOf(SearchTerm, StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
+    private bool IsItemSelected(string id)
+    {
+        return Selected.Contains(id);
+    }
+
+    private void ToggleItem(string id)
+    {
+        var newSelection = new HashSet<string>(Selected);
+        if (newSelection.Contains(id))
+        {
+            newSelection.Remove(id);
+        }
+        else
+        {
+            newSelection.Add(id);
+        }
+        SelectionChanged.InvokeAsync(newSelection);
+    }
+
+    private void SelectAll()
+    {
+        var newSelection = new HashSet<string>(Selected);
+        newSelection.UnionWith(GetVisibleItems().Select(i => i.Id));
+        SelectionChanged.InvokeAsync(newSelection);
+    }
+
+    private void Clear()
+    {
+        SelectionChanged.InvokeAsync(new HashSet<string>());
+    }
+}
