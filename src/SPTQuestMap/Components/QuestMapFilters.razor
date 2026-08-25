@@ -76,7 +76,13 @@
 
     private static QuestComparisonFilter[] ComparisonFilters { get; } = Enum.GetValues<QuestComparisonFilter>();
 
-    private string FilterLabel(QuestComparisonFilter filter) => Localizer[$"compare.filter.{filter}"];
+    private string FilterLabel(QuestComparisonFilter filter) => filter switch
+    {
+        // "A only" / "B only" mean nothing once the slots are labelled by nickname.
+        QuestComparisonFilter.PrimaryOnly => Localizer.Format("compare.category.PrimaryOnlyNamed", ("profile", State.PrimaryShortLabel)),
+        QuestComparisonFilter.ComparisonOnly => Localizer.Format("compare.category.ComparisonOnlyNamed", ("profile", State.ComparisonShortLabel)),
+        _ => Localizer[$"compare.filter.{filter}"],
+    };
 
     private IReadOnlyList<FilterDropdown.FilterDropdownItem> TraderItems()
         => State.FilterTraders()

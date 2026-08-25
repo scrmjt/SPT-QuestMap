@@ -1,3 +1,4 @@
+@using SPTQuestMap.Core.Rules
 <header class="topbar">
     <div class="primary-row">
         <div class="brand"><span class="eyebrow">SPT 4.0.13</span><h1>@Localizer["app.heading"]</h1></div>
@@ -7,7 +8,7 @@
             <div class="profile-field @(CompareMode ? "compare-profile" : null) @(ProfileMenuOpen ? "open" : null)">
                 <button class="profile-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="@ProfileMenuOpen.ToString().ToLowerInvariant()" aria-label="@(CompareMode ? Localizer["compare.profileA"] : Localizer["profile.aria"])" disabled="@(Busy || SelectedProfile is null)" @onclick="ToggleProfileMenu" @onkeydown="OnProfileKeyDown">
                     <span class="profile-select-face" aria-hidden="true">
-                        @if (CompareMode) { <span class="profile-slot primary-slot">A</span> }
+                        @if (CompareMode) { <span class="profile-slot primary-slot">@ProfileLabelRules.ShortLabel(SelectedProfile?.Nickname, "A")</span> }
                         <span class="profile-side-icon @SideClass(SelectedProfile?.Side)"></span>
                         <strong class="profile-name">@(SelectedProfile?.Nickname ?? "—")</strong>
                         <span class="profile-level">@(SelectedProfile?.Level.ToString() ?? "—")</span>
@@ -36,7 +37,7 @@
                 <div class="profile-field compare-profile @(ComparisonProfileMenuOpen ? "open" : null)">
                     <button class="profile-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="@ComparisonProfileMenuOpen.ToString().ToLowerInvariant()" aria-label="@Localizer["compare.profileB"]" disabled="@(Busy || SelectedComparisonProfile is null)" @onclick="ToggleComparisonProfileMenu" @onkeydown="OnComparisonProfileKeyDown">
                         <span class="profile-select-face" aria-hidden="true">
-                            <span class="profile-slot comparison-slot">B</span>
+                            <span class="profile-slot comparison-slot">@ProfileLabelRules.ShortLabel(SelectedComparisonProfile?.Nickname, "B")</span>
                             <span class="profile-side-icon @SideClass(SelectedComparisonProfile?.Side)"></span>
                             <strong class="profile-name">@(SelectedComparisonProfile?.Nickname ?? "-")</strong>
                             <span class="profile-level">@(SelectedComparisonProfile?.Level.ToString() ?? "-")</span>

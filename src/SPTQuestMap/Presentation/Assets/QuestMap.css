@@ -127,7 +127,10 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .language-field { margin-left: auto; }
 .language-field select { width: 9.5rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.filterbar { display: flex; align-items: stretch; gap: .75rem; min-height: 78px; padding: .45rem .75rem; overflow: hidden; }
+/* overflow must stay visible: the filter dropdown panels are absolutely positioned
+   children and 'hidden' clipped them to the bar's 78px. The clipping existed for the
+   horizontally scrolling trader row, which the dropdowns replaced. */
+.filterbar { display: flex; align-items: stretch; gap: .75rem; min-height: 78px; padding: .45rem .75rem; overflow: visible; }
 .filter-tools { display: grid; flex: 0 0 16rem; grid-template-rows: 32px 34px; gap: .35rem; }
 .filter-toggles { display: grid; grid-template-columns: 38px 38px 38px minmax(0,1fr); gap: .35rem; }
 .filter-toggle { height: 32px; padding: 0 .4rem; color: #aaaDA4; font-size: 1rem; font-weight: 800; }
@@ -150,7 +153,7 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .filter-dropdown-label { position: relative; display: block; min-width: 0; flex: 0 1 15rem; }
 .filter-dropdown { position: relative; }
 .filter-dropdown-button { width: 100%; height: 32px; padding: 0 1.5rem 0 .5rem; overflow: hidden; border-color: #565d52; background: #222721; color: #cfd2c8; font-size: .72rem; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.filter-dropdown-button::after { position: absolute; top: 50%; right: .45rem; content: "BE"; transform: translateY(-50%); color: #9fa39a; font-size: .65rem; }
+.filter-dropdown-button::after { position: absolute; top: 50%; right: .45rem; content: "▾"; transform: translateY(-50%); color: #9fa39a; font-size: .65rem; }
 .filter-dropdown-button:hover:not(:disabled) { border-color: #76652f; background: #2a2f27; }
 .filter-dropdown-button[aria-expanded="true"] { border-color: #ddbf5b; background: #51451f; color: #fff2c5; }
 .filter-dropdown-button:disabled { opacity: .45; }
