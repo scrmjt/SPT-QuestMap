@@ -68,6 +68,16 @@ public sealed class QuestMapPageState
     public bool CatchUpExpanded { get; private set; }
     public IReadOnlySet<string> MapFilter { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<SharedMapRankingDto> SharedMapRankings { get; private set; } = [];
+
+    /// <summary>
+    /// Per map: how many quests each profile still needs a raid there for, and how many
+    /// both do. Unlike <see cref="SharedMapRankings"/> this covers every location the map
+    /// filter can select, including the non-raidable pseudo-locations, because it labels
+    /// the filter's own options. Populated outside compare mode too, with zeroed
+    /// comparison and shared counts.
+    /// </summary>
+    public IReadOnlyDictionary<string, MapQuestCounts> MapQuestCounts { get; private set; }
+        = new Dictionary<string, MapQuestCounts>(StringComparer.Ordinal);
     public IReadOnlyList<QuestSeriesProgressDto> SeriesProgress { get; private set; } = [];
 
     /// <summary>
@@ -79,6 +89,25 @@ public sealed class QuestMapPageState
     public string PrimaryShortLabel => ProfileLabelRules.ShortLabel(Profile?.Nickname, "A");
 
     public string ComparisonShortLabel => ProfileLabelRules.ShortLabel(ComparisonProfile?.Nickname, "B");
+
+    /// <summary>Label for the graph tiles, which have room for about five characters.</summary>
+    public string PrimaryTileLabel => ProfileLabelRules.ShortLabel(Profile?.Nickname, "A", 5);
+
+    public string ComparisonTileLabel => ProfileLabelRules.ShortLabel(ComparisonProfile?.Nickname, "B", 5);
+
+    /// <summary>
+    /// The nickname when it is short enough to sit in a filter chip, otherwise the tile-sized
+    /// abbreviation. Ten characters is what the comparison filter row fits without wrapping.
+    /// </summary>
+    public string PrimaryFilterLabel => FilterFriendlyName(Profile?.Nickname, PrimaryTileLabel);
+
+    public string ComparisonFilterLabel => FilterFriendlyName(ComparisonProfile?.Nickname, ComparisonTileLabel);
+
+    private static string FilterFriendlyName(string? nickname, string fallback)
+    {
+        var trimmed = nickname?.Trim();
+        return !string.IsNullOrEmpty(trimmed) && trimmed.Length <= 10 ? trimmed : fallback;
+    }
 
     public void ApplySettings(QuestMapSettings settings)
     {
@@ -306,6 +335,8 @@ public sealed class QuestMapPageState
         CompareMode ? VisibleIds.Select(GetComparison).ToArray() : [],
         InProgressExpanded,
         ViewportScope(),
+        PrimaryTileLabel,
+        ComparisonTileLabel,
         localizer.Strings
     );
 
@@ -319,7 +350,7 @@ public sealed class QuestMapPageState
     public QuestGraphUpdate BuildGraphUpdate() => new(
         VisibleIds.ToArray(), SelectedId, FocusedId, PrerequisiteIds.ToArray(), SuccessorIds.ToArray(),
         HighlightedEdgeIndexes.ToArray(), CompareMode ? VisibleIds.Select(GetComparison).ToArray() : [],
-        CompareMode, InProgressExpanded, ViewportScope()
+        CompareMode, InProgressExpanded, ViewportScope(), PrimaryTileLabel, ComparisonTileLabel
     );
 
     private void Recalculate()
@@ -605,6 +636,7 @@ public sealed class QuestMapPageState
     /// </summary>
     private void RebuildCatchUpModel()
     {
+        BuildMapQuestCounts();
         if (!CompareMode || Topology is null)
         {
             _catchUpNodes = [];
@@ -720,6 +752,43 @@ public sealed class QuestMapPageState
         var selectable = FilterMaps().Select(map => map.Id).ToHashSet(StringComparer.Ordinal);
         if (MapFilter.All(selectable.Contains)) return;
         MapFilter = MapFilter.Where(selectable.Contains).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Counts, per location, the quests each profile still has to raid for. "Still needs a
+    /// raid" is the same test the shared-map ranking uses, so a quest whose objectives are
+    /// already met and only needs handing in does not inflate the count.
+    /// </summary>
+    private void BuildMapQuestCounts()
+    {
+        if (Topology is null)
+        {
+            MapQuestCounts = new Dictionary<string, MapQuestCounts>(StringComparer.Ordinal);
+            return;
+        }
+
+        var counts = new Dictionary<string, (int Primary, int Comparison, int Shared)>(StringComparer.Ordinal);
+        foreach (var questId in _applicable)
+        {
+            if (!_nodeMaps.TryGetValue(questId, out var maps)) continue;
+            var primary = NeedsRaid(GetQuestState(questId));
+            var comparison = CompareMode && NeedsRaid(GetComparisonQuestState(questId));
+            if (!primary && !comparison) continue;
+
+            foreach (var map in maps)
+            {
+                var current = counts.GetValueOrDefault(map.Id);
+                counts[map.Id] = (
+                    current.Primary + (primary ? 1 : 0),
+                    current.Comparison + (comparison ? 1 : 0),
+                    current.Shared + (primary && comparison ? 1 : 0));
+            }
+        }
+
+        MapQuestCounts = counts.ToDictionary(
+            pair => pair.Key,
+            pair => new MapQuestCounts(pair.Value.Primary, pair.Value.Comparison, pair.Value.Shared),
+            StringComparer.Ordinal);
     }
 
     /// <summary>True when no trader is selected, or the quest belongs to one of them.</summary>
@@ -920,6 +989,9 @@ public sealed record QuestMapSettings(string? SelectedProfileId, string? Languag
     public IReadOnlyDictionary<string, QuestProfileUiSettings>? ComparePairs { get; init; } = new Dictionary<string, QuestProfileUiSettings>();
     public static QuestMapSettings Default { get; } = new(null, null, false, true, true, false, string.Empty, string.Empty, new Dictionary<string, QuestProfileUiSettings>());
 }
-public sealed record QuestGraphView(string? ProfileId, string? ComparisonProfileId, bool CompareMode, string Language, string BrowserLocale, string[] VisibleQuestIds, string? SelectedId, string? FocusedId, string[] PrerequisiteIds, string[] SuccessorIds, int[] HighlightedEdgeIndexes, QuestComparisonDto[] Comparisons, bool InProgressExpanded, string ViewportScope, IReadOnlyDictionary<string, string> Strings);
+public sealed record QuestGraphView(string? ProfileId, string? ComparisonProfileId, bool CompareMode, string Language, string BrowserLocale, string[] VisibleQuestIds, string? SelectedId, string? FocusedId, string[] PrerequisiteIds, string[] SuccessorIds, int[] HighlightedEdgeIndexes, QuestComparisonDto[] Comparisons, bool InProgressExpanded, string ViewportScope, string PrimaryLabel, string ComparisonLabel, IReadOnlyDictionary<string, string> Strings);
 public sealed record QuestGraphSnapshot(QuestTopologyDto Topology, ProfileStateDto? Profile, ProfileStateDto? ComparisonProfile, QuestGraphView View);
-public sealed record QuestGraphUpdate(string[] VisibleQuestIds, string? SelectedId, string? FocusedId, string[] PrerequisiteIds, string[] SuccessorIds, int[] HighlightedEdgeIndexes, QuestComparisonDto[] Comparisons, bool CompareMode, bool InProgressExpanded, string ViewportScope);
+/// <summary>Quests still needing a raid on one location, per profile and shared.</summary>
+public sealed record MapQuestCounts(int Primary, int Comparison, int Shared);
+
+public sealed record QuestGraphUpdate(string[] VisibleQuestIds, string? SelectedId, string? FocusedId, string[] PrerequisiteIds, string[] SuccessorIds, int[] HighlightedEdgeIndexes, QuestComparisonDto[] Comparisons, bool CompareMode, bool InProgressExpanded, string ViewportScope, string PrimaryLabel, string ComparisonLabel);

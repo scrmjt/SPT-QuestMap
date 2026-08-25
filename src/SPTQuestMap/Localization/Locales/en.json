@@ -190,5 +190,17 @@
   "filter.selectedCount": "{0} selected",
   "filter.close": "Close",
   "trader.search": "Search traders",
-  "map.search": "Search maps"
+  "map.search": "Search maps",
+  "filter.tip.AllQuests": "Every quest both profiles can take, whether or not their progress differs.",
+  "filter.tip.AllChanges": "Only quests where the two profiles differ in any way.",
+  "filter.tip.PrimaryOnly": "Quests only {profile} can take — the other profile is excluded from them.",
+  "filter.tip.ComparisonOnly": "Quests only {profile} can take — the other profile is excluded from them.",
+  "filter.tip.Exclusion": "Quests on opposite sides of a branch: taking one locks the other out.",
+  "filter.tip.Status": "Same quest, different completion state — started, finished, failed.",
+  "filter.tip.Objectives": "Same quest and status, but the objective counters differ.",
+  "filter.tip.AvailableAfter": "Quests waiting on a timer, where the two profiles differ.",
+  "map.badge.primary": "{profile} still needs a raid here for {count} quest(s)",
+  "map.badge.comparison": "{profile} still needs a raid here for {count} quest(s)",
+  "map.badge.shared": "Both players still need a raid here for {count} quest(s)",
+  "filters.section": "Filters"
 }

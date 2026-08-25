@@ -95,6 +95,7 @@ function applyProfiles(profile,comparisonProfile){
 }
 function applyConfig(config){
   if(config.browserLocale)state.browserLocale=config.browserLocale;if(config.strings)state.strings=config.strings;state.viewportScope=config.viewportScope||'';
+  state.primaryLabel=config.primaryLabel||'A';state.comparisonLabel=config.comparisonLabel||'B';
   state.compareMode=Boolean(config.compareMode&&state.comparisonProfile);
   state.visible=new Set(config.visibleQuestIds||[]);state.selectedId=config.selectedId||null;state.focusedId=config.focusedId||null;
   state.prerequisiteIds=new Set(config.prerequisiteIds||[]);state.successorIds=new Set(config.successorIds||[]);state.highlightedEdges=new Set(config.highlightedEdgeIndexes||[]);state.comparisonById=new Map((config.comparisons||[]).map(item=>[item.questId,item]));
@@ -184,10 +185,24 @@ function drawCompareNode(node,primaryState,comparisonState,p,dimmed,matchingDimm
   ctx.save();ctx.globalAlpha=nodeAlpha;roundRect(p.x,p.y,p.w,p.h,8);ctx.fillStyle=state.theme.compareDifference;ctx.fill();roundRect(body.x,body.y,body.w,body.h,7);ctx.fillStyle=state.theme.cardBody;ctx.fill();ctx.save();roundRect(body.x,body.y,body.w,body.h,7);ctx.clip();ctx.globalAlpha=1;const hasBanner=drawCardBanner(node,body);if(hasBanner){ctx.fillStyle=state.theme.bannerShade;ctx.fillRect(body.x,body.y,body.w,body.h);}ctx.restore();drawRouteStrip(node.id,body);
   if(state.view.scale<OVERVIEW_SCALE){const barX=body.x+10,barW=Math.max(18,body.w-20);ctx.fillStyle=primaryColor;roundRect(barX,p.y+18,barW,14,3);ctx.fill();ctx.fillStyle=comparisonColor;roundRect(barX,p.y+52,barW,14,3);ctx.fill();if(state.view.scale>=.20)drawComparisonReasonBadge(p,comparison.categories,true);if(node.eventSeason){ctx.fillStyle=state.theme.eventMarker;ctx.fillRect(p.x+p.w-12,p.y+7,5,5);}if(isTerminalQuest(node.id))drawTerminalMarker(p);drawComparisonOutline(p);drawNodeOutline(p,selected,prerequisite,successor,hovered,hoverPredecessor,hoverSuccessor);if(hasDirectPrerequisite(node.id))drawCenterNotch(p);ctx.restore();return;}
   const iconSize=51,iconX=body.x+9,iconY=p.y+(hasRoute?8.5:(p.h-iconSize)/2),traderImage=getImage(node.traderImageUrl);if(traderImage?.complete&&traderImage.naturalWidth){ctx.save();roundRect(iconX,iconY,iconSize,iconSize,5);ctx.clip();drawImageCover(traderImage,iconX,iconY,iconSize,iconSize);ctx.restore();}else{ctx.fillStyle=state.theme.portraitBackground;roundRect(iconX,iconY,iconSize,iconSize,5);ctx.fill();ctx.fillStyle=state.theme.portraitText;ctx.font='700 16px system-ui';ctx.textAlign='center';ctx.fillText(initials(node.traderName),iconX+iconSize/2,iconY+32);}ctx.strokeStyle=state.theme.portraitBorder;ctx.lineWidth=1/state.view.scale;roundRect(iconX,iconY,iconSize,iconSize,5);ctx.stroke();
-  const textX=iconX+iconSize+9,textWidth=p.x+p.w-13-textX,badgeWidth=drawComparisonReasonBadge(p,comparison.categories,false);ctx.save();ctx.shadowColor=state.theme.textShadow;ctx.shadowBlur=3;ctx.shadowOffsetX=1;ctx.shadowOffsetY=1;ctx.textAlign='left';ctx.fillStyle=state.theme.title;ctx.font='700 13px system-ui';ctx.fillText(fitText(node.name,Math.max(30,textWidth-badgeWidth-5)),textX,iconY+12);drawCompareStatusLine('A',primaryDisplay,primaryState,textX,iconY+31,textWidth,primaryColor);drawCompareStatusLine('B',comparisonDisplay,comparisonState,textX,iconY+48,textWidth,comparisonColor);ctx.restore();
+  const textX=iconX+iconSize+9,textWidth=p.x+p.w-13-textX,badgeWidth=drawComparisonReasonBadge(p,comparison.categories,false);ctx.save();ctx.shadowColor=state.theme.textShadow;ctx.shadowBlur=3;ctx.shadowOffsetX=1;ctx.shadowOffsetY=1;ctx.textAlign='left';ctx.fillStyle=state.theme.title;ctx.font='700 13px system-ui';ctx.fillText(fitText(node.name,Math.max(30,textWidth-badgeWidth-5)),textX,iconY+12);drawCompareStatusLine(state.primaryLabel,primaryDisplay,primaryState,textX,iconY+31,textWidth,primaryColor);drawCompareStatusLine(state.comparisonLabel,comparisonDisplay,comparisonState,textX,iconY+48,textWidth,comparisonColor);ctx.restore();
   if(node.eventSeason){ctx.fillStyle=state.theme.eventMarker;ctx.fillRect(p.x+p.w-10,p.y+p.h-10,4,4);}if(isTerminalQuest(node.id))drawTerminalMarker(p);drawComparisonOutline(p);drawNodeOutline(p,selected,prerequisite,successor,hovered,hoverPredecessor,hoverSuccessor);if(hasDirectPrerequisite(node.id))drawCenterNotch(p);ctx.restore();
 }
-function drawCompareStatusLine(label,display,questState,x,y,width,color){const ctx=state.ctx;ctx.fillStyle=color;roundRect(x,y-8,13,11,2);ctx.fill();ctx.fillStyle=state.theme.title;ctx.font='800 7px system-ui';ctx.textAlign='center';ctx.fillText(label,x+6.5,y);ctx.textAlign='left';ctx.font='700 8px system-ui';const progress=display==='InProgress'&&questState?.progressPercent!=null?` · ~${number(questState.progressPercent)}%`:'';ctx.fillText(fitText(`${stateLabel(display).toLocaleUpperCase(state.browserLocale)}${progress}`,width-18),x+18,y);}
+function drawCompareStatusLine(label,display,questState,x,y,width,color){
+  const ctx=state.ctx;
+  // The badge used to be a fixed 13px box sized for the single letters 'A' and 'B'. It now
+  // carries up to five characters of the profile nickname, so it has to measure the text and
+  // the status line has to start after it rather than at a hardcoded offset.
+  ctx.font='800 7px system-ui';
+  const badgeWidth=Math.max(13,Math.min(36,ctx.measureText(label).width+7));
+  ctx.fillStyle=color;roundRect(x,y-8,badgeWidth,11,2);ctx.fill();
+  ctx.fillStyle=state.theme.title;ctx.textAlign='center';
+  ctx.fillText(fitText(label,badgeWidth-4),x+badgeWidth/2,y);
+  ctx.textAlign='left';ctx.font='700 8px system-ui';
+  const progress=display==='InProgress'&&questState?.progressPercent!=null?` · ~${number(questState.progressPercent)}%`:'';
+  const statusX=x+badgeWidth+5;
+  ctx.fillText(fitText(`${stateLabel(display).toLocaleUpperCase(state.browserLocale)}${progress}`,Math.max(20,width-(statusX-x))),statusX,y);
+}
 function comparisonReason(categories){const label=t(`compare.category.${categories[0]}`);return categories.length>1?`${label} +${categories.length-1}`:label;}
 function drawComparisonReasonBadge(p,categories,overview){const ctx=state.ctx,label=comparisonReason(categories);ctx.save();ctx.font=`800 ${overview?11:8}px system-ui`;const maxWidth=overview?p.w-40:82,width=Math.min(maxWidth,ctx.measureText(label).width+12),height=overview?17:14,x=p.x+p.w-width-8,y=p.y+(overview?(p.h-height)/2:6);ctx.fillStyle=state.theme.compareDifference;roundRect(x,y,width,height,3);ctx.fill();ctx.fillStyle=state.theme.compareDifferenceText;ctx.textAlign='center';ctx.fillText(fitText(label,width-8),x+width/2,y+(overview?12:10));ctx.restore();return width;}
 function drawComparisonOutline(p){const ctx=state.ctx;ctx.save();ctx.strokeStyle=state.theme.compareDifference;ctx.lineWidth=2.4/state.view.scale;roundRect(p.x,p.y,p.w,p.h,8);ctx.stroke();ctx.restore();}

@@ -89,6 +89,15 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 - **`FilterDropdown` renders no panel while `Disabled`.** Disabling only the trigger button
   left an already-open panel live during focus mode, where the state setters ignore changes —
   the checkbox moved and nothing filtered.
+- **The canvas renderer is configured by TWO payloads and both must be updated together.**
+  `QuestGraphView` feeds `initialize`/`refresh` on first paint; `QuestGraphUpdate` feeds
+  `synchronize` on every later change. Both land in the same `applyConfig`. Adding a field to
+  only one produces a bug that is invisible on a fresh page load but correct after any filter
+  change - or the reverse. The profile tile labels live in both.
+- **Profile label lengths are deliberate: 2 for the compact slot chips, 5 for graph tiles,
+  and the full nickname on filter chips when it is 10 characters or shorter.**
+  `ProfileLabelRules.ShortLabel` takes the element count; it counts text elements, not chars,
+  so surrogate pairs are not split.
 - **`.filterbar` must keep `overflow: visible`.** It was `hidden` to contain the horizontally
   scrolling trader row the dropdowns replaced. With dropdowns, `hidden` clips the absolutely
   positioned panel to the bar's 78px: only the search box shows and the checkbox list is

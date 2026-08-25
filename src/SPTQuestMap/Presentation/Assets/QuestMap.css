@@ -130,8 +130,8 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 /* overflow must stay visible: the filter dropdown panels are absolutely positioned
    children and 'hidden' clipped them to the bar's 78px. The clipping existed for the
    horizontally scrolling trader row, which the dropdowns replaced. */
-.filterbar { display: flex; align-items: stretch; gap: .75rem; min-height: 78px; padding: .45rem .75rem; overflow: visible; }
-.filter-tools { display: grid; flex: 0 0 16rem; grid-template-rows: 32px 34px; gap: .35rem; }
+.filterbar { display: flex; align-items: flex-start; gap: .75rem; min-height: 78px; padding: .45rem .75rem; overflow: visible; }
+.filter-tools { display: grid; flex: 0 0 30rem; grid-template-rows: 32px 34px auto; gap: .35rem; align-content: start; }
 .filter-toggles { display: grid; grid-template-columns: 38px 38px 38px minmax(0,1fr); gap: .35rem; }
 .filter-toggle { height: 32px; padding: 0 .4rem; color: #aaaDA4; font-size: 1rem; font-weight: 800; }
 .filter-toggle.active { border-color: #dfc15e; background: #5b4b1e; color: #fff4c8; box-shadow: inset 0 -3px #e1c45e, 0 0 0 1px #76652f; }
@@ -149,8 +149,8 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .trader-option span { display: -webkit-box; width: 100%; overflow: hidden; font-size: .58rem; font-weight: 700; line-height: 1.05; text-align: center; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Excel-style multi-select filters. Replaces the trader/map radio rows; the panel is
    absolutely positioned so opening it cannot reflow the fixed-height filter bar. */
-.filter-dropdowns { display: flex; flex: 1 1 auto; align-items: center; gap: .5rem; min-width: 0; }
-.filter-dropdown-label { position: relative; display: block; min-width: 0; flex: 0 1 15rem; }
+.filter-dropdowns { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.filter-dropdown-label { position: relative; display: block; min-width: 0; flex: 1 1 0; }
 .filter-dropdown { position: relative; }
 .filter-dropdown-button { width: 100%; height: 32px; padding: 0 1.5rem 0 .5rem; overflow: hidden; border-color: #565d52; background: #222721; color: #cfd2c8; font-size: .72rem; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .filter-dropdown-button::after { position: absolute; top: 50%; right: .45rem; content: "▾"; transform: translateY(-50%); color: #9fa39a; font-size: .65rem; }
@@ -169,6 +169,17 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .filter-dropdown-item img { width: 20px; height: 20px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
 .filter-dropdown-close { height: 26px; color: #aeb2a8; font-size: .64rem; font-weight: 700; }
 .filter-dropdown-close:hover { border-color: #76652f; color: #fff2c5; }
+
+/* The comparison chips moved out of their own full-width bar and into the left filter
+   panel, so they wrap instead of scrolling horizontally. */
+.comparison-filters { display: flex; flex-wrap: wrap; gap: .25rem; padding-top: .1rem; }
+.comparison-filters .comparison-filter { height: 24px; font-size: .62rem; }
+.filter-dropdown-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.filter-dropdown-badges { display: inline-flex; flex: 0 0 auto; gap: .2rem; margin-left: .3rem; }
+.filter-dropdown-badge { display: inline-grid; min-width: 17px; height: 15px; place-items: center; padding: 0 .22rem; border-radius: 999px; font-size: .56rem; font-weight: 800; }
+.filter-dropdown-badge.badge-primary { background: var(--qm-renderer-compare-primary, #3d6ea5); color: #eaf2ff; }
+.filter-dropdown-badge.badge-comparison { background: var(--qm-renderer-compare-comparison, #8d5ba8); color: #f7ecff; }
+.filter-dropdown-badge.badge-shared { background: #d8bd5c; color: #241f0c; }
 
 .comparison-filterbar { display: flex; grid-column: 1; width: 100%; min-height: 40px; align-items: center; gap: .35rem; padding: .32rem .75rem; overflow-x: auto; border-top: 1px solid #292e29; background: #121613; scrollbar-width: thin; }
 .comparison-filter-summary { flex: 0 0 auto; margin-right: .25rem; color: #9fa39a; font-size: .68rem; text-transform: uppercase; white-space: nowrap; }

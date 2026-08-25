@@ -11,54 +11,52 @@
             <button class="filter-toggle level-toggle @(State.LevelEligibleOnly ? "active" : null)" type="button" aria-pressed="@State.LevelEligibleOnly.ToString().ToLowerInvariant()" title="@Localizer["levelEligible"]" aria-label="@Localizer["levelEligible"]" disabled="@State.FocusMode" @onclick="() => LevelEligibleChanged.InvokeAsync(!State.LevelEligibleOnly)"><span>≤ @(State.Profile?.Level.ToString() ?? "?")</span></button>
         </div>
         <label class="field search-field"><span class="sr-only">@Localizer["search.label"]</span><input type="search" value="@State.Search" placeholder="@Localizer["search.placeholder"]" autocomplete="off" @oninput="OnSearchInput"></label>
-    </div>
-    <div class="filter-separator" aria-hidden="true"></div>
-    @{ var maps = State.FilterMaps(); }
-    <div class="filter-dropdowns">
-        <label class="filter-dropdown-label">
-            <span class="sr-only">@Localizer["trader.label"]</span>
-            <FilterDropdown Items="@TraderItems()"
-                            Selected="@State.TraderFilter"
-                            AllLabel="@Localizer["trader.allShort"]"
-                            SearchPlaceholder="@Localizer["trader.search"]"
-                            SelectAllLabel="@Localizer["filter.selectAll"]"
-                            ClearLabel="@Localizer["filter.clear"]"
-                            SelectedCountFormat="@Localizer["filter.selectedCount"]"
-                            CloseLabel="@Localizer["filter.close"]"
-                            Disabled="@State.FocusMode"
-                            SelectionChanged="TraderChanged" />
-        </label>
-        @if (maps.Count > 0)
-        {
+        @{ var maps = State.FilterMaps(); }
+        <div class="filter-dropdowns">
             <label class="filter-dropdown-label">
-                <span class="sr-only">@Localizer["map.label"]</span>
-                <FilterDropdown Items="@MapItems(maps)"
-                                Selected="@State.MapFilter"
-                                AllLabel="@Localizer["map.allShort"]"
-                                SearchPlaceholder="@Localizer["map.search"]"
+                <span class="sr-only">@Localizer["trader.label"]</span>
+                <FilterDropdown Items="@TraderItems()"
+                                Selected="@State.TraderFilter"
+                                AllLabel="@Localizer["trader.allShort"]"
+                                SearchPlaceholder="@Localizer["trader.search"]"
                                 SelectAllLabel="@Localizer["filter.selectAll"]"
                                 ClearLabel="@Localizer["filter.clear"]"
                                 SelectedCountFormat="@Localizer["filter.selectedCount"]"
                                 CloseLabel="@Localizer["filter.close"]"
                                 Disabled="@State.FocusMode"
-                                SelectionChanged="MapChanged" />
+                                SelectionChanged="TraderChanged" />
             </label>
+            @if (maps.Count > 0)
+            {
+                <label class="filter-dropdown-label">
+                    <span class="sr-only">@Localizer["map.label"]</span>
+                    <FilterDropdown Items="@MapItems(maps)"
+                                    Selected="@State.MapFilter"
+                                    AllLabel="@Localizer["map.allShort"]"
+                                    SearchPlaceholder="@Localizer["map.search"]"
+                                    SelectAllLabel="@Localizer["filter.selectAll"]"
+                                    ClearLabel="@Localizer["filter.clear"]"
+                                    SelectedCountFormat="@Localizer["filter.selectedCount"]"
+                                    CloseLabel="@Localizer["filter.close"]"
+                                    Disabled="@State.FocusMode"
+                                    SelectionChanged="MapChanged" />
+                </label>
+            }
+        </div>
+        @if (State.CompareMode)
+        {
+            <div class="comparison-filters" role="radiogroup" aria-label="@Localizer["compare.filter.aria"]">
+                @foreach (var filter in ComparisonFilters)
+                {
+                    var selected = State.ComparisonFilter == filter;
+                    <button class="comparison-filter @(selected ? "selected" : null)" type="button" role="radio" aria-checked="@selected.ToString().ToLowerInvariant()" title="@FilterTooltip(filter)" disabled="@State.FocusMode" @onclick="() => ComparisonFilterChanged.InvokeAsync(filter)">
+                        <span>@FilterLabel(filter)</span><b>@FilterCount(filter)</b>
+                    </button>
+                }
+            </div>
         }
     </div>
 </div>
-@if (State.CompareMode)
-{
-    <div class="comparison-filterbar" role="radiogroup" aria-label="@Localizer["compare.filter.aria"]">
-        <span class="comparison-filter-summary"><strong>@State.DifferenceCount</strong> @Localizer["compare.differencesShort"]</span>
-        @foreach (var filter in ComparisonFilters)
-        {
-            var selected = State.ComparisonFilter == filter;
-            <button class="comparison-filter @(selected ? "selected" : null)" type="button" role="radio" aria-checked="@selected.ToString().ToLowerInvariant()" disabled="@State.FocusMode" @onclick="() => ComparisonFilterChanged.InvokeAsync(filter)">
-                <span>@FilterLabel(filter)</span><b>@FilterCount(filter)</b>
-            </button>
-        }
-    </div>
-}
 
 @code {
     [Parameter, EditorRequired] public QuestMapPageState State { get; set; } = default!;
@@ -78,10 +76,21 @@
 
     private string FilterLabel(QuestComparisonFilter filter) => filter switch
     {
-        // "A only" / "B only" mean nothing once the slots are labelled by nickname.
-        QuestComparisonFilter.PrimaryOnly => Localizer.Format("compare.category.PrimaryOnlyNamed", ("profile", State.PrimaryShortLabel)),
-        QuestComparisonFilter.ComparisonOnly => Localizer.Format("compare.category.ComparisonOnlyNamed", ("profile", State.ComparisonShortLabel)),
+        // "A only" / "B only" mean nothing once the slots carry profile names.
+        QuestComparisonFilter.PrimaryOnly => Localizer.Format("compare.category.PrimaryOnlyNamed", ("profile", State.PrimaryFilterLabel)),
+        QuestComparisonFilter.ComparisonOnly => Localizer.Format("compare.category.ComparisonOnlyNamed", ("profile", State.ComparisonFilterLabel)),
         _ => Localizer[$"compare.filter.{filter}"],
+    };
+
+    /// <summary>
+    /// Hover text explaining what each comparison filter actually selects. The chip labels
+    /// are single words ("Branch", "Status") whose meaning is not guessable from the word.
+    /// </summary>
+    private string FilterTooltip(QuestComparisonFilter filter) => filter switch
+    {
+        QuestComparisonFilter.PrimaryOnly => Localizer.Format("filter.tip.PrimaryOnly", ("profile", State.PrimaryFilterLabel)),
+        QuestComparisonFilter.ComparisonOnly => Localizer.Format("filter.tip.ComparisonOnly", ("profile", State.ComparisonFilterLabel)),
+        _ => Localizer[$"filter.tip.{filter}"],
     };
 
     private IReadOnlyList<FilterDropdown.FilterDropdownItem> TraderItems()
@@ -90,8 +99,39 @@
                 trader.Id, trader.Name, trader.ImageUrl ?? "/files/trader/avatar/unknown.png"))
             .ToArray();
 
-    private static IReadOnlyList<FilterDropdown.FilterDropdownItem> MapItems(IReadOnlyList<QuestMapReferenceDto> maps)
-        => maps.Select(map => new FilterDropdown.FilterDropdownItem(map.Id, map.Name)).ToArray();
+    private IReadOnlyList<FilterDropdown.FilterDropdownItem> MapItems(IReadOnlyList<QuestMapReferenceDto> maps)
+        => maps.Select(map => new FilterDropdown.FilterDropdownItem(map.Id, map.Name, null, MapBadges(map.Id))).ToArray();
+
+    /// <summary>
+    /// Up to three count chips per location: what each player still has to raid for there,
+    /// and how much of that overlaps. A zero is omitted rather than shown, so a location
+    /// neither player needs stays visually quiet instead of adding three "0" chips.
+    /// </summary>
+    private IReadOnlyList<FilterDropdown.FilterDropdownBadge>? MapBadges(string mapId)
+    {
+        if (!State.MapQuestCounts.TryGetValue(mapId, out var counts)) return null;
+
+        var badges = new List<FilterDropdown.FilterDropdownBadge>(3);
+        if (counts.Primary > 0)
+        {
+            badges.Add(new FilterDropdown.FilterDropdownBadge(
+                counts.Primary.ToString(), "badge-primary",
+                Localizer.Format("map.badge.primary", ("profile", State.PrimaryFilterLabel), ("count", counts.Primary))));
+        }
+        if (State.CompareMode && counts.Comparison > 0)
+        {
+            badges.Add(new FilterDropdown.FilterDropdownBadge(
+                counts.Comparison.ToString(), "badge-comparison",
+                Localizer.Format("map.badge.comparison", ("profile", State.ComparisonFilterLabel), ("count", counts.Comparison))));
+        }
+        if (State.CompareMode && counts.Shared > 0)
+        {
+            badges.Add(new FilterDropdown.FilterDropdownBadge(
+                counts.Shared.ToString(), "badge-shared",
+                Localizer.Format("map.badge.shared", ("count", counts.Shared))));
+        }
+        return badges.Count == 0 ? null : badges;
+    }
 
     private int FilterCount(QuestComparisonFilter filter) => filter switch
     {

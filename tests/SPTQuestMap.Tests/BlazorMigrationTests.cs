@@ -501,7 +501,8 @@ public sealed class BlazorMigrationTests
         {
             Assert.That(html, Does.Contain("PrimaryProfileWithLongName"));
             Assert.That(html, Does.Contain("ComparisonProfileWithLongName"));
-            Assert.That(html, Does.Contain("comparison-filterbar"));
+            // The comparison chips moved out of their own full-width bar into the left filter panel.
+            Assert.That(html, Does.Contain("comparison-filters"));
             Assert.That(html, Does.Contain("comparison-summary"));
             Assert.That(html, Does.Contain("matching-comparison-details"));
             Assert.That(html, Does.Contain("comparison-table"));

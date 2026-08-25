@@ -30,7 +30,16 @@
                             {
                                 <img src="@item.ImageUrl" alt="" />
                             }
-                            @item.Label
+                            <span class="filter-dropdown-item-label">@item.Label</span>
+                            @if (item.Badges is { Count: > 0 })
+                            {
+                                <span class="filter-dropdown-badges">
+                                    @foreach (var badge in item.Badges)
+                                    {
+                                        <b class="filter-dropdown-badge @badge.CssClass" title="@badge.Tooltip">@badge.Text</b>
+                                    }
+                                </span>
+                            }
                         </label>
                     </li>
                 }
@@ -41,7 +50,10 @@
 </div>
 
 @code {
-    public sealed record FilterDropdownItem(string Id, string Label, string? ImageUrl = null);
+    public sealed record FilterDropdownItem(string Id, string Label, string? ImageUrl = null, IReadOnlyList<FilterDropdownBadge>? Badges = null);
+
+    /// <summary>A small count chip shown on the right of a dropdown row.</summary>
+    public sealed record FilterDropdownBadge(string Text, string CssClass, string Tooltip);
 
     [Parameter, EditorRequired]
     public IReadOnlyList<FilterDropdownItem> Items { get; set; } = default!;

@@ -186,5 +186,17 @@
   "filter.selectedCount": "{0} ausgewählt",
   "filter.close": "Schließen",
   "trader.search": "Händler suchen",
-  "map.search": "Karten suchen"
+  "map.search": "Karten suchen",
+  "filter.tip.AllQuests": "Alle Quests, die beide Profile annehmen können, unabhängig vom Fortschritt.",
+  "filter.tip.AllChanges": "Nur Quests, bei denen sich die beiden Profile unterscheiden.",
+  "filter.tip.PrimaryOnly": "Quests, die nur {profile} annehmen kann — das andere Profil ist ausgeschlossen.",
+  "filter.tip.ComparisonOnly": "Quests, die nur {profile} annehmen kann — das andere Profil ist ausgeschlossen.",
+  "filter.tip.Exclusion": "Quests auf gegenüberliegenden Zweigen: eine zu nehmen sperrt die andere.",
+  "filter.tip.Status": "Gleiche Quest, anderer Status — begonnen, abgeschlossen, fehlgeschlagen.",
+  "filter.tip.Objectives": "Gleiche Quest und Status, aber die Zielzähler unterscheiden sich.",
+  "filter.tip.AvailableAfter": "Quests mit Wartezeit, bei denen sich die Profile unterscheiden.",
+  "map.badge.primary": "{profile} braucht hier noch {count} Raid-Quest(s)",
+  "map.badge.comparison": "{profile} braucht hier noch {count} Raid-Quest(s)",
+  "map.badge.shared": "Beide Spieler brauchen hier noch {count} Raid-Quest(s)",
+  "filters.section": "Filter"
 }
