@@ -80,6 +80,9 @@ public sealed class QuestMapPageState
         = new Dictionary<string, MapQuestCounts>(StringComparer.Ordinal);
     public IReadOnlyList<QuestSeriesProgressDto> SeriesProgress { get; private set; } = [];
 
+    /// <summary>Where to raid to close the gap, ranked by actionable catch-up quests.</summary>
+    public IReadOnlyList<SharedMapRankingDto> CatchUpMapRankings { get; private set; } = [];
+
     /// <summary>
     /// Compare-mode slot labels: the first two characters of each profile's nickname,
     /// falling back to "A"/"B" when a profile has no usable nickname. These are display
@@ -132,6 +135,7 @@ public sealed class QuestMapPageState
         // Settings can be applied either side of SetData; re-rank so a restored map
         // filter takes effect when data is already loaded (no-op when it isn't).
         BuildCatchUpChains();
+        BuildCatchUpMapRankings();
         BuildSeriesProgress();
     }
 
@@ -206,6 +210,7 @@ public sealed class QuestMapPageState
         MapFilter = Freeze(value);
         Recalculate();
         BuildCatchUpChains();
+        BuildCatchUpMapRankings();
         BuildSeriesProgress();
     }
     public void SetSearch(string? value) { Search = value ?? string.Empty; Recalculate(); }
@@ -657,6 +662,7 @@ public sealed class QuestMapPageState
 
         BuildSharedMapRankings();
         BuildCatchUpChains();
+        BuildCatchUpMapRankings();
         BuildSeriesProgress();
     }
 
@@ -823,6 +829,47 @@ public sealed class QuestMapPageState
         return (int)Math.Max(list.Length, list.Sum(objective => objective.RequiredValue ?? 1));
     }
 
+    /// <summary>
+    /// A quest the player can actually do something about now: already taken, or offered by
+    /// the trader. Everything else is behind a level, prerequisite, trader or prestige gate,
+    /// and listing it beside actionable work buries the thing you can actually go do.
+    /// </summary>
+    private static bool IsActionableState(string? displayState) => displayState is
+        "Available" or "AvailableForStart" or "AvailableForFinish" or "InProgress"
+        or "Started" or "ReadyToFinish" or "Pending";
+
+    /// <summary>
+    /// Locations ranked by how many ACTIONABLE catch-up quests sit on them - "where should I
+    /// go to close the gap". Distinct from <see cref="SharedMapRankings"/>, which answers the
+    /// different question of where both players still have work.
+    /// </summary>
+    private void BuildCatchUpMapRankings()
+    {
+        if (!CompareMode || Topology is null) { CatchUpMapRankings = []; return; }
+
+        var counts = new Dictionary<string, (string Name, List<string> Quests)>(StringComparer.Ordinal);
+        foreach (var chain in CatchUpChains)
+        {
+            foreach (var quest in chain.NextQuests)
+            {
+                if (!_nodeMaps.TryGetValue(quest.QuestId, out var maps)) continue;
+                foreach (var map in maps)
+                {
+                    if (!IsRaidableMap(map.Id)) continue;
+                    if (!counts.TryGetValue(map.Id, out var entry)) entry = (map.Name, new List<string>());
+                    entry.Quests.Add(quest.Name);
+                    counts[map.Id] = entry;
+                }
+            }
+        }
+
+        CatchUpMapRankings = counts
+            .Select(pair => new SharedMapRankingDto(pair.Key, pair.Value.Name, null, pair.Value.Quests.Count, pair.Value.Quests))
+            .OrderByDescending(ranking => ranking.Count)
+            .ThenBy(ranking => ranking.MapName, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
     /// <summary>True when no trader is selected, or the quest belongs to one of them.</summary>
     private bool MatchesTraderFilter(string questId)
         => TraderFilter.Count == 0
@@ -887,19 +934,40 @@ public sealed class QuestMapPageState
             .Select(gap =>
             {
                 var trader = _catchUpTraders.GetValueOrDefault(gap.TraderId);
-                var nextQuests = gap.NextQuests.Select(recommendation =>
+                var quests = gap.NextQuests.Select(recommendation =>
                 {
                     var node = _nodeById.GetValueOrDefault(recommendation.QuestId);
                     var state = GetQuestState(recommendation.QuestId);
+                    var displayState = state?.DisplayState ?? "Locked";
                     return new CatchUpQuestDto(
                         recommendation.QuestId,
                         node?.Name ?? recommendation.QuestId,
                         recommendation.Depth,
-                        state?.DisplayState ?? "Locked",
-                        state?.Blockers ?? []);
+                        displayState,
+                        state?.Blockers ?? [])
+                    {
+                        Actionable = IsActionableState(displayState),
+                        LocationName = _nodeMaps.TryGetValue(recommendation.QuestId, out var maps) && maps.Length > 0
+                            ? string.Join(", ", maps.Take(2).Select(map => map.Name))
+                            : string.Empty,
+                    };
                 }).ToArray();
-                return new CatchUpChainDto(gap.TraderId, trader?.Name ?? gap.TraderId, trader?.ImageUrl, gap.PrimaryCompletedCount, gap.ComparisonCompletedCount, gap.Gap, nextQuests);
+
+                var actionable = quests.Where(quest => quest.Actionable).ToArray();
+                var gated = quests.Where(quest => !quest.Actionable).ToArray();
+                return new CatchUpChainDto(gap.TraderId, trader?.Name ?? gap.TraderId, trader?.ImageUrl, gap.PrimaryCompletedCount, gap.ComparisonCompletedCount, gap.Gap, actionable)
+                {
+                    GatedQuests = gated,
+                    // The earliest missing quest is how far back the chain picks up again.
+                    BehindDepth = quests.Length == 0 ? int.MaxValue : quests.Min(quest => quest.Depth),
+                };
             })
+            // Chains the player can act on come first, then the ones where they restart
+            // furthest back, then by how many quests they are behind.
+            .OrderByDescending(chain => chain.Actionable)
+            .ThenBy(chain => chain.BehindDepth)
+            .ThenByDescending(chain => chain.Gap)
+            .ThenBy(chain => chain.TraderId, StringComparer.Ordinal)
             .ToArray();
     }
 

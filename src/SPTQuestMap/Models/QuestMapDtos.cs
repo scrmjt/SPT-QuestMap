@@ -144,8 +144,27 @@ public sealed record QuestMapClientTopologyFeedDto(
     IReadOnlyDictionary<string, string[]> PrerequisiteBlockerIds,
     IReadOnlyDictionary<string, string> QuestSummaries,
     IReadOnlyDictionary<string, QuestMetaInfoDto> QuestMetaInfo);
-public sealed record CatchUpQuestDto(string QuestId, string Name, int Depth, string DisplayState, QuestBlockerDto[] Blockers);
-public sealed record CatchUpChainDto(string TraderId, string TraderName, string? TraderImageUrl, int PrimaryCompletedCount, int ComparisonCompletedCount, int Gap, IReadOnlyList<CatchUpQuestDto> NextQuests);
+public sealed record CatchUpQuestDto(string QuestId, string Name, int Depth, string DisplayState, QuestBlockerDto[] Blockers)
+{
+    /// <summary>Can be worked on right now - already taken, or available to take.</summary>
+    public bool Actionable { get; init; }
+
+    /// <summary>Where this quest can be worked, for the card's location line.</summary>
+    public string LocationName { get; init; } = string.Empty;
+
+    /// <summary>What the quest asks for, e.g. "8 kills".</summary>
+    public string ObjectiveSummary { get; init; } = string.Empty;
+}
+public sealed record CatchUpChainDto(string TraderId, string TraderName, string? TraderImageUrl, int PrimaryCompletedCount, int ComparisonCompletedCount, int Gap, IReadOnlyList<CatchUpQuestDto> NextQuests)
+{
+    /// <summary>Quests behind a gate: shown collapsed, because they cannot be acted on yet.</summary>
+    public IReadOnlyList<CatchUpQuestDto> GatedQuests { get; init; } = [];
+
+    /// <summary>Depth of the earliest quest still missing - how far back the chain restarts.</summary>
+    public int BehindDepth { get; init; }
+
+    public bool Actionable => NextQuests.Count > 0;
+}
 public sealed record SharedMapRankingDto(string MapId, string MapName, string? BannerImageUrl, int Count, IReadOnlyList<string> QuestNames);
 public sealed record QuestSeriesProgressDto(string SeriesName, int TotalParts, int PrimaryFurthest, int ComparisonFurthest);
 public sealed record QuestMapClientRepeatableFeedDto(

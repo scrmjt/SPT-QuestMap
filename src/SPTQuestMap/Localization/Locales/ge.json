@@ -209,5 +209,9 @@
   "objective.kind.trader": "{count} Händler",
   "objective.kind.quest": "{count} Quest",
   "objective.kind.other": "{count} Aufgaben",
-  "objective.mix.aria": "Was diese Quest verlangt"
+  "objective.mix.aria": "Was diese Quest verlangt",
+  "catchup.gatedChains": "{count} gesperrte Ketten",
+  "catchup.gatedQuests": "{count} gesperrt",
+  "catchup.maps.title": "Beste Karten zum Aufholen",
+  "catchup.maps.count": "{count} Aufhol-Quests"
 }

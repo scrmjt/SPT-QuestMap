@@ -18,7 +18,7 @@
         <main class="workspace">
             <div class="side-views">
                 <InProgressDrawer State="@State" Localizer="@Localizer" ExpandedChanged="SetDrawerExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
-                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
+                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" ChainSelected="FocusChainAsync" />
             </div>
             <section class="viewport @(State.InProgressExpanded ? "progress-panel-open" : null)" aria-label="@Localizer["graph.aria"]" @ref="ViewportElement">
                 <canvas id="graph" tabindex="0" aria-label="@Localizer["graph.canvasAria"]" @ref="CanvasElement"></canvas>
@@ -202,6 +202,26 @@
         State.SelectQuest(id);
         await SynchronizeRendererAsync();
         if (Module is not null) await Module.InvokeVoidAsync("centerQuest", id);
+        await SaveSettingsAsync();
+    }
+
+    /// <summary>
+    /// Clicking a catch-up chain focuses it on the graph: select the earliest quest the
+    /// player can actually act on, then activate focus so only that chain is drawn. Falls
+    /// back to the first gated quest when nothing in the chain is actionable, so a
+    /// fully-blocked chain still shows you where it picks up.
+    /// </summary>
+    private async Task FocusChainAsync(string traderId)
+    {
+        var chain = State.CatchUpChains.FirstOrDefault(item => item.TraderId == traderId);
+        var target = chain?.NextQuests.FirstOrDefault() ?? chain?.GatedQuests.FirstOrDefault();
+        if (target is null) return;
+
+        if (State.FocusMode) State.ClearFocus();
+        State.SelectQuest(target.QuestId);
+        State.ActivateFocus();
+        await SynchronizeRendererAsync();
+        if (Module is not null) await Module.InvokeVoidAsync("centerQuest", target.QuestId);
         await SaveSettingsAsync();
     }
 

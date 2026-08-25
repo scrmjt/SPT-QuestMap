@@ -213,5 +213,9 @@
   "objective.kind.trader": "{count} trader",
   "objective.kind.quest": "{count} quest",
   "objective.kind.other": "{count} tasks",
-  "objective.mix.aria": "What this quest asks for"
+  "objective.mix.aria": "What this quest asks for",
+  "catchup.gatedChains": "{count} gated chains",
+  "catchup.gatedQuests": "{count} gated",
+  "catchup.maps.title": "Best Maps to Catch Up",
+  "catchup.maps.count": "{count} catch-up"
 }

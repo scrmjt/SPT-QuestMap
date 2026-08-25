@@ -226,6 +226,23 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .catchup-panel.expanded .catchup-toggle { border-bottom-color: #353a34; }
 .catchup-title { display: block; overflow: hidden; font-size: .7rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
 .catchup-chevron { font-size: 1.25rem; line-height: 1; }
+/* Catch-up cards mirror the Quests In Progress card: title and subtitle on the left,
+   state on the right, on one row. */
+.catchup-trader { display: flex; width: 100%; align-items: center; gap: .4rem; padding: .3rem .35rem; border: 0; border-radius: 4px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.catchup-trader:hover { background: #232821; }
+.catchup-trader img { width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
+.catchup-trader strong { flex: 1 1 auto; overflow: hidden; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.catchup-quest button { display: grid; width: 100%; align-items: center; gap: .2rem .5rem; padding: .3rem .4rem; grid-template-columns: minmax(0, 1fr) auto; text-align: left; }
+.catchup-quest-header { display: grid; min-width: 0; grid-template-columns: minmax(0,1fr); gap: .05rem; }
+.catchup-quest-name { overflow: hidden; color: #e2ded2; font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
+.catchup-quest-location { overflow: hidden; color: #8f958c; font-size: .55rem; text-overflow: ellipsis; white-space: nowrap; }
+/* Gated work is present but out of the way: it cannot be acted on yet. */
+.catchup-gated { margin: .2rem 0 .35rem; }
+.catchup-gated > summary { padding: .22rem .4rem; border-radius: 3px; background: #1b1f1c; color: #8f958c; cursor: pointer; font-size: .58rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.catchup-gated > summary:hover { color: #cfd2c8; }
+.catchup-gated[open] > summary { margin-bottom: .25rem; }
+.catchup-gated .catchup-quest { opacity: .62; }
+
 .catchup-content { display: none; flex: 1 1 auto; min-height: 0; padding: .5rem; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .catchup-panel.expanded .catchup-content { display: block; }
 .catchup-empty { color: #8f958c; font-size: .68rem; }

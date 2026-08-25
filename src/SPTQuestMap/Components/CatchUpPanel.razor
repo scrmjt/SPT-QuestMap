@@ -1,3 +1,4 @@
+@using System.Linq
 @if (State.CompareMode)
 {
     <aside class="catchup-panel @(State.CatchUpExpanded ? "expanded" : null)" aria-label="@Localizer["catchup.title"]">
@@ -26,26 +27,35 @@
             {
                 <p class="catchup-empty">@Localizer["catchup.none"]</p>
             }
-            @foreach (var chain in State.CatchUpChains)
+            @foreach (var chain in State.CatchUpChains.Where(item => item.Actionable))
             {
-                <section class="catchup-chain">
-                    <div class="catchup-trader">
-                        <img src="@(chain.TraderImageUrl ?? "/files/trader/avatar/unknown.png")" alt="">
-                        <strong>@chain.TraderName</strong>
-                        <span class="catchup-gap" title="@Localizer.Format("catchup.gap.detail", ("primary", chain.PrimaryCompletedCount), ("comparison", chain.ComparisonCompletedCount))">@Localizer.Format("catchup.gap", ("count", chain.Gap))</span>
-                    </div>
-                    <ol class="catchup-quests">
-                        @foreach (var quest in chain.NextQuests)
-                        {
-                            <li class="catchup-quest @(quest.QuestId == State.SelectedId ? "selected" : null)">
-                                <button type="button" @onclick="() => QuestSelected.InvokeAsync(quest.QuestId)">
-                                    <span class="catchup-quest-name">@quest.Name</span>
-                                    <span class="catchup-quest-state">@(Localizer[$"state.{quest.DisplayState}"])</span>
-                                </button>
-                            </li>
-                        }
-                    </ol>
-                </section>
+                @RenderChain(chain)
+            }
+            @{ var blockedChains = State.CatchUpChains.Where(item => !item.Actionable).ToArray(); }
+            @if (blockedChains.Length > 0)
+            {
+                <details class="catchup-gated">
+                    <summary>@Localizer.Format("catchup.gatedChains", ("count", blockedChains.Length))</summary>
+                    @foreach (var chain in blockedChains)
+                    {
+                        @RenderChain(chain)
+                    }
+                </details>
+            }
+            @if (State.CatchUpMapRankings.Count > 0)
+            {
+                <h4 class="catchup-section-title">@Localizer["catchup.maps.title"]</h4>
+                <ol class="catchup-shared-maps">
+                    @foreach (var ranking in State.CatchUpMapRankings)
+                    {
+                        <li class="catchup-shared-map">
+                            <div class="catchup-shared-map-header">
+                                <strong>@ranking.MapName</strong>
+                                <span class="catchup-gap">@Localizer.Format("catchup.maps.count", ("count", ranking.Count))</span>
+                            </div>
+                        </li>
+                    }
+                </ol>
             }
             @if (State.SharedMapRankings.Count > 0)
             {
@@ -73,10 +83,60 @@
 }
 
 @code {
+    private RenderFragment RenderChain(CatchUpChainDto chain) => @<section class="catchup-chain">
+        <button class="catchup-trader" type="button" title="@Localizer.Format("catchup.gap.detail", ("primary", chain.PrimaryCompletedCount), ("comparison", chain.ComparisonCompletedCount))"
+                @onclick="() => ChainSelected.InvokeAsync(chain.TraderId)">
+            <img src="@(chain.TraderImageUrl ?? "/files/trader/avatar/unknown.png")" alt="">
+            <strong>@chain.TraderName</strong>
+            <span class="catchup-gap">@Localizer.Format("catchup.gap", ("count", chain.Gap))</span>
+        </button>
+        <ol class="catchup-quests">
+            @foreach (var quest in chain.NextQuests)
+            {
+                @RenderQuest(quest)
+            }
+        </ol>
+        @if (chain.GatedQuests.Count > 0)
+        {
+            <details class="catchup-gated">
+                <summary>@Localizer.Format("catchup.gatedQuests", ("count", chain.GatedQuests.Count))</summary>
+                <ol class="catchup-quests">
+                    @foreach (var quest in chain.GatedQuests)
+                    {
+                        @RenderQuest(quest)
+                    }
+                </ol>
+            </details>
+        }
+    </section>;
+
+    private RenderFragment RenderQuest(CatchUpQuestDto quest) => @<li class="catchup-quest @(quest.QuestId == State.SelectedId ? "selected" : null)">
+        <button type="button" @onclick="() => QuestSelected.InvokeAsync(quest.QuestId)">
+            <span class="catchup-quest-header">
+                <span class="catchup-quest-name">@quest.Name</span>
+                <span class="catchup-quest-location">@QuestSubtitle(quest)</span>
+            </span>
+            <span class="catchup-quest-state">@(Localizer[$"state.{quest.DisplayState}"])</span>
+        </button>
+    </li>;
+
+    /// <summary>Location plus what the quest asks for, matching the Quests In Progress card.</summary>
+    private string QuestSubtitle(CatchUpQuestDto quest)
+    {
+        var mix = State.ObjectiveMix(quest.QuestId);
+        var objectives = mix.Count == 0
+            ? string.Empty
+            : " · " + string.Join(" · ", mix.Take(2).Select(entry => Localizer.Format($"objective.kind.{entry.Kind}", ("count", entry.Amount))));
+        return quest.LocationName + objectives;
+    }
+
     [Parameter, EditorRequired] public QuestMapPageState State { get; set; } = default!;
     [Parameter, EditorRequired] public QuestMapLocalizer Localizer { get; set; } = default!;
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
     [Parameter] public EventCallback<string> QuestSelected { get; set; }
+
+    /// <summary>Raised with a trader id when a whole chain is clicked, to focus it on the graph.</summary>
+    [Parameter] public EventCallback<string> ChainSelected { get; set; }
 
     private RenderFragment RenderSeriesRow(string who, int furthest, int total, string role) => @<div class="catchup-series-row @role">
         <span class="catchup-series-who">@who</span>
