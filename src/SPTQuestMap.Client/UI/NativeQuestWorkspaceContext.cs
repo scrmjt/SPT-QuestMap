@@ -48,6 +48,8 @@ internal sealed class NativeQuestWorkspaceContext
 
     public bool DebugLogging { get; }
 
+    public bool EnableTaskMapTabs() => _configuration.EnableTaskMapTabs.Value;
+
     public bool ShowHiddenRewards() => _configuration.ShowHiddenQuestRewards.Value;
 
     public bool DefaultDetailsToSummary() => _configuration.DefaultQuestDetailsToSummary.Value;

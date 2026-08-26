@@ -218,4 +218,6 @@
   "tooltip.questItemsEmpty": "При вас нет квестовых предметов.",
   "tooltip.showDescriptionPane": "Показать описание выбранного задания.",
   "tooltip.hideDescriptionPane": "Скрыть описание выбранного задания."
+  "tabs.taskMap": "Карта задач",
+  "tabs.coopTasks": "Совместные задачи",
 }

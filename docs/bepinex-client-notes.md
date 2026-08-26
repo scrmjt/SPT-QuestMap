@@ -182,6 +182,48 @@ is not jank - it is the honest initial state, and the switch becomes user-driven
 a race against layout and server data. Prefer this over the `CanvasGroup` veil if the tab is
 going to be built anyway; the veil is the smaller fix if the takeover model stays.
 
+## 5. Implemented: "Task Map" / "Coop Tasks" tabs (needs in-game testing)
+
+Config: **Features → "Add Task Map tabs"**, default **on**. Turning it off restores the old
+full-takeover behaviour exactly.
+
+`NativeTaskTabStrip` (`src/SPTQuestMap.Client/UI/NativeTaskTabStrip.cs`) adds tabs beside the
+game's own selectors. Design points worth keeping:
+
+- **The tabs are clones of a real vanilla `Toggle`**, not hand-built controls, so they inherit
+  EFT's sprites, fonts and checked states and keep matching after a game update restyles the
+  originals.
+- **Cloned listeners are removed** — an inherited `onValueChanged` would still drive the
+  vanilla panel the clone came from.
+- **Clones join the template's `ToggleGroup`**, so Unity enforces exclusivity. We never observe
+  the vanilla toggles; we react to *our* toggle being switched off (index `-1`).
+- **Localisation components on the clone are disabled before setting the caption.** EFT
+  re-applies its own string on enable, which would silently rewrite the tab back to
+  "Active Tasks".
+
+In `GlobalTasksScreenController.Mount`, when tabs are on: none of the four native selectors are
+hidden, the graph is **not** built, and the vanilla list stays up. The graph is built lazily the
+first time "Task Map" is selected.
+
+**`SoftHideNativeTasksWorkspace()` exists because `HideNativeTasksWorkspace()` calls
+`TasksPanel.Close()`.** Reopening a closed panel needs EFT's own `Show(...)` arguments, which we
+do not hold — so the takeover path may close it, but the tab path must only `SetActive(false)`,
+or you could switch away from vanilla and never back.
+
+If the strip cannot be built (`Create` returns null), the controller falls back to the old
+takeover path rather than leaving a half-built screen.
+
+### Not done
+
+- **"Coop Tasks" is deliberately inert** (`SetInteractable(CoopTabIndex, false)`). It needs the
+  server compare route from section 2, which does not exist yet. The tab is visible so the
+  shape is testable, but clicking it does nothing by design.
+- **Nothing here has run in Tarkov.** It compiles and the 316 server-side tests still pass, but
+  no automated test covers Unity UI. Check the BepInEx log for `QUESTMAP_TABS_READY`,
+  `QUESTMAP_TABS_SELECT` and `QUESTMAP_TABS_ERROR`.
+- The risks in section 4 still stand — in particular `RestoreNativeSidePanelLayout()` now runs
+  repeatedly rather than once per screen close.
+
 ## 4. Rules that must not be "tidied" into Core
 
 Both exist because Core is shared, and pushing browser-only concepts down breaks the plugin

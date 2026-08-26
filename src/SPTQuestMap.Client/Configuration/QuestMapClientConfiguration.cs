@@ -10,6 +10,7 @@ internal sealed class QuestMapClientConfiguration
         string configFilePath,
         ConfigEntry<bool> enableTraderQuestGraph,
         ConfigEntry<bool> enableGlobalTasksGraph,
+        ConfigEntry<bool> enableTaskMapTabs,
         ConfigEntry<bool> showHiddenQuestRewards,
         ConfigEntry<bool> defaultQuestDetailsToSummary,
         ConfigEntry<QuestTaskTextSize> taskListQuestTextSize,
@@ -48,6 +49,7 @@ internal sealed class QuestMapClientConfiguration
         ConfigFilePath = configFilePath;
         EnableTraderQuestGraph = enableTraderQuestGraph;
         EnableGlobalTasksGraph = enableGlobalTasksGraph;
+        EnableTaskMapTabs = enableTaskMapTabs;
         ShowHiddenQuestRewards = showHiddenQuestRewards;
         DefaultQuestDetailsToSummary = defaultQuestDetailsToSummary;
         TaskListQuestTextSize = taskListQuestTextSize;
@@ -89,6 +91,13 @@ internal sealed class QuestMapClientConfiguration
     public string ConfigFilePath { get; }
 
     public ConfigEntry<bool> EnableGlobalTasksGraph { get; }
+
+    /// <summary>
+    /// Add "Task Map" and "Coop Tasks" beside the game's own task selectors instead of
+    /// replacing the whole screen. Leaves the vanilla list working, which makes iterating on
+    /// the QuestMap views far less disruptive.
+    /// </summary>
+    public ConfigEntry<bool> EnableTaskMapTabs { get; }
 
     public ConfigEntry<bool> ShowHiddenQuestRewards { get; }
 
@@ -173,6 +182,11 @@ internal sealed class QuestMapClientConfiguration
                 "Replace global Tasks screen",
                 true,
                 "Replace the global Tasks quest views with Tasks and full QuestMap views while retaining native Notes and Quest Items."),
+            config.Bind(
+                "Features",
+                "Add Task Map tabs",
+                true,
+                "Add \"Task Map\" and \"Coop Tasks\" next to the game's own task selectors and leave the vanilla task list in place, instead of taking over the whole screen."),
             config.Bind(
                 "Quest details",
                 "Show hidden quest rewards",
