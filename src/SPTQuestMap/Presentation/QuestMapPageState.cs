@@ -105,6 +105,68 @@ public sealed class QuestMapPageState
     public IReadOnlyList<SharedMapRankingDto> CatchUpMapRankings { get; private set; } = [];
 
     /// <summary>
+    /// Per player, the maps that would best close THEIR gap: the quests the other profile has
+    /// finished and they have not, grouped by where they have to be done. One section per
+    /// player, because "best map to play together" cannot answer a question that has a
+    /// different answer for each of them.
+    /// </summary>
+    public IReadOnlyList<PlayerCatchUpMapsDto> PlayerCatchUpMaps { get; private set; } = [];
+
+    private void BuildPlayerCatchUpMaps()
+    {
+        if (!CompareMode || Topology is null || Profile is null || ComparisonProfile is null)
+        {
+            PlayerCatchUpMaps = [];
+            return;
+        }
+
+        PlayerCatchUpMaps =
+        [
+            BuildFor(Profile.ProfileId, PrimaryFilterLabel, GetQuestState, GetComparisonQuestState, _primaryApplicable),
+            BuildFor(ComparisonProfile.ProfileId, ComparisonFilterLabel, GetComparisonQuestState, GetQuestState, _comparisonApplicable),
+        ];
+
+        PlayerCatchUpMapsDto BuildFor(
+            string profileId,
+            string label,
+            Func<string, QuestStateDto?> own,
+            Func<string, QuestStateDto?> other,
+            IReadOnlySet<string> applicable)
+        {
+            var byMap = new Dictionary<string, (string Name, List<string> Quests)>(StringComparer.Ordinal);
+            foreach (var node in _catchUpNodes)
+            {
+                // Behind means: they finished it, this player has not, and this player can
+                // actually take it. A quest not applicable to them is not a gap to close.
+                if (!applicable.Contains(node.Id)) continue;
+                if (other(node.Id)?.DisplayState != "Completed") continue;
+                if (own(node.Id)?.DisplayState == "Completed") continue;
+                if (!_nodeMaps.TryGetValue(node.Id, out var maps)) continue;
+
+                foreach (var map in maps)
+                {
+                    if (!IsRaidableMap(map.Id)) continue;
+                    if (!byMap.TryGetValue(map.Id, out var entry)) entry = (map.Name, new List<string>());
+                    entry.Quests.Add(node.Name);
+                    byMap[map.Id] = entry;
+                }
+            }
+
+            var maps2 = byMap
+                .Select(pair => new CatchUpMapEntryDto(
+                    pair.Key,
+                    pair.Value.Name,
+                    pair.Value.Quests.Count,
+                    pair.Value.Quests.OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).ToArray()))
+                .OrderByDescending(entry => entry.Count)
+                .ThenBy(entry => entry.MapName, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+
+            return new PlayerCatchUpMapsDto(profileId, label, maps2);
+        }
+    }
+
+    /// <summary>
     /// Profiles in the co-op pool. Separate from the pairwise primary/comparison pair on
     /// purpose: the graph tiles and difference categories are inherently two-way, so the pool
     /// feeds the co-op panels only and leaves compare mode untouched.
@@ -247,6 +309,7 @@ public sealed class QuestMapPageState
         // filter takes effect when data is already loaded (no-op when it isn't).
         BuildCatchUpChains();
         BuildCatchUpMapRankings();
+        BuildPlayerCatchUpMaps();
         BuildSeriesProgress();
     }
 
@@ -330,6 +393,7 @@ public sealed class QuestMapPageState
         Recalculate();
         BuildCatchUpChains();
         BuildCatchUpMapRankings();
+        BuildPlayerCatchUpMaps();
         BuildSeriesProgress();
     }
     public void SetSearch(string? value) { Search = value ?? string.Empty; Recalculate(); }
@@ -831,13 +895,44 @@ public sealed class QuestMapPageState
                 GetComparisonQuestState(node.Id)?.DisplayState == "Completed"));
         }
 
+        var byQuestId = facts.ToLookup(fact => fact.SeriesName, StringComparer.Ordinal);
+
         SeriesProgress = QuestSeriesRules.BuildProgress(facts)
             .Where(entry => seriesOnMap.Contains(entry.SeriesName))
-            .Select(entry => new QuestSeriesProgressDto(
-                entry.SeriesName,
-                entry.TotalParts,
-                entry.PrimaryFurthest,
-                entry.ComparisonFurthest))
+            // A series both players have reached the same part of says nothing about catching
+            // up; listing it buries the ones that do.
+            .Where(entry => entry.PrimaryFurthest != entry.ComparisonFurthest)
+            .Select(entry =>
+            {
+                var primaryBehind = entry.PrimaryFurthest < entry.ComparisonFurthest;
+                var behindLabel = primaryBehind ? PrimaryFilterLabel : ComparisonFilterLabel;
+                var behindFurthest = primaryBehind ? entry.PrimaryFurthest : entry.ComparisonFurthest;
+                var leaderFurthest = primaryBehind ? entry.ComparisonFurthest : entry.PrimaryFurthest;
+
+                // The parts between where they are and where the other player got to, that they
+                // have not finished. Ordered by part so it reads as the order to play them.
+                var catchUp = byQuestId[entry.SeriesName]
+                    .Where(fact => fact.Part > behindFurthest && fact.Part <= leaderFurthest)
+                    .Where(fact => !(primaryBehind ? fact.PrimaryCompleted : fact.ComparisonCompleted))
+                    .OrderBy(fact => fact.Part)
+                    .Select(fact => new SeriesCatchUpQuestDto(
+                        fact.QuestId,
+                        _nodeById.GetValueOrDefault(fact.QuestId)?.Name ?? fact.QuestId,
+                        MapNamesFor(fact.QuestId)))
+                    .ToArray();
+
+                return new QuestSeriesProgressDto(
+                    entry.SeriesName,
+                    entry.TotalParts,
+                    entry.PrimaryFurthest,
+                    entry.ComparisonFurthest)
+                {
+                    BehindLabel = behindLabel,
+                    CatchUpQuests = catchUp,
+                };
+            })
+            .OrderByDescending(entry => entry.CatchUpQuests.Count)
+            .ThenBy(entry => entry.SeriesName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
 
@@ -999,6 +1094,12 @@ public sealed class QuestMapPageState
             .ThenBy(ranking => ranking.MapName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
+
+    /// <summary>Where a quest can be worked, for the "(Customs, Woods)" suffix in a list.</summary>
+    private string MapNamesFor(string questId)
+        => _nodeMaps.TryGetValue(questId, out var maps) && maps.Length > 0
+            ? string.Join(", ", maps.Take(3).Select(map => map.Name))
+            : string.Empty;
 
     /// <summary>True when no trader is selected, or the quest belongs to one of them.</summary>
     private bool MatchesTraderFilter(string questId)
@@ -1231,6 +1332,12 @@ public sealed record MapQuestCounts(int Primary, int Comparison, int Shared);
 /// names of the quests standing in the way, closest first.
 /// </summary>
 public sealed record CoopBehindDto(string ProfileId, string Label, int Furthest, int Count, IReadOnlyList<string> Blocking);
+
+/// <summary>A map worth running to close one player's gap, and what they are behind on there.</summary>
+public sealed record CatchUpMapEntryDto(string MapId, string MapName, int Count, IReadOnlyList<string> QuestNames);
+
+/// <summary>One player's catch-up map ranking.</summary>
+public sealed record PlayerCatchUpMapsDto(string ProfileId, string Label, IReadOnlyList<CatchUpMapEntryDto> Maps);
 
 /// <summary>One kind of thing a quest asks for, and how much of it.</summary>
 public sealed record ObjectiveMixEntry(string Kind, int Amount);

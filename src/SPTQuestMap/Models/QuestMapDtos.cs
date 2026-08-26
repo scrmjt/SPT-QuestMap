@@ -166,7 +166,17 @@ public sealed record CatchUpChainDto(string TraderId, string TraderName, string?
     public bool Actionable => NextQuests.Count > 0;
 }
 public sealed record SharedMapRankingDto(string MapId, string MapName, string? BannerImageUrl, int Count, IReadOnlyList<string> QuestNames);
-public sealed record QuestSeriesProgressDto(string SeriesName, int TotalParts, int PrimaryFurthest, int ComparisonFurthest);
+public sealed record QuestSeriesProgressDto(string SeriesName, int TotalParts, int PrimaryFurthest, int ComparisonFurthest)
+{
+    /// <summary>Which player is behind in this series.</summary>
+    public string BehindLabel { get; init; } = string.Empty;
+
+    /// <summary>Exactly what they must play to draw level, in series order.</summary>
+    public IReadOnlyList<SeriesCatchUpQuestDto> CatchUpQuests { get; init; } = [];
+}
+
+/// <summary>A quest standing between a player and the rest of their group in a series.</summary>
+public sealed record SeriesCatchUpQuestDto(string QuestId, string Name, string MapNames);
 public sealed record QuestMapClientRepeatableFeedDto(
     string StaticTopologyVersion,
     QuestNodeDto[] ProfileGeneratedQuests,

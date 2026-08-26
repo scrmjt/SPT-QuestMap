@@ -12,13 +12,31 @@
                 <ol class="catchup-series">
                     @foreach (var series in State.SeriesProgress)
                     {
-                        <li class="catchup-series-item @(series.PrimaryFurthest == series.ComparisonFurthest ? "level" : null)">
+                        <li class="catchup-series-item">
                             <div class="catchup-series-header">
                                 <strong>@series.SeriesName</strong>
                                 <span class="catchup-series-total">/@series.TotalParts</span>
                             </div>
                             @RenderSeriesRow(State.Profile?.Nickname ?? State.PrimaryShortLabel, series.PrimaryFurthest, series.TotalParts, "primary")
                             @RenderSeriesRow(State.ComparisonProfile?.Nickname ?? State.ComparisonShortLabel, series.ComparisonFurthest, series.TotalParts, "comparison")
+                            @if (series.CatchUpQuests.Count > 0)
+                            {
+                                <p class="catchup-series-lead">@Localizer.Format("catchup.series.needs", ("profile", series.BehindLabel))</p>
+                                <ol class="catchup-series-quests">
+                                    @foreach (var quest in series.CatchUpQuests)
+                                    {
+                                        <li>
+                                            <button type="button" @onclick="() => QuestSelected.InvokeAsync(quest.QuestId)">
+                                                <span class="catchup-series-quest-name">@quest.Name</span>
+                                                @if (quest.MapNames.Length > 0)
+                                                {
+                                                    <span class="catchup-series-quest-map">(@quest.MapNames)</span>
+                                                }
+                                            </button>
+                                        </li>
+                                    }
+                                </ol>
+                            }
                         </li>
                     }
                 </ol>
@@ -42,34 +60,20 @@
                     }
                 </details>
             }
-            @if (State.CatchUpMapRankings.Count > 0)
+            @foreach (var player in State.PlayerCatchUpMaps.Where(entry => entry.Maps.Count > 0))
             {
-                <h4 class="catchup-section-title">@Localizer["catchup.maps.title"]</h4>
+                <h4 class="catchup-section-title">@Localizer.Format("catchup.playerMaps.title", ("profile", player.Label))</h4>
                 <ol class="catchup-shared-maps">
-                    @foreach (var ranking in State.CatchUpMapRankings)
+                    @foreach (var map in player.Maps)
                     {
                         <li class="catchup-shared-map">
-                            <div class="catchup-shared-map-header">
-                                <strong>@ranking.MapName</strong>
-                                <span class="catchup-gap">@Localizer.Format("catchup.maps.count", ("count", ranking.Count))</span>
-                            </div>
-                        </li>
-                    }
-                </ol>
-            }
-            @if (State.SharedMapRankings.Count > 0)
-            {
-                <h4 class="catchup-shared-maps-title">@Localizer["catchup.sharedMaps.title"]</h4>
-                <ol class="catchup-shared-maps">
-                    @foreach (var ranking in State.SharedMapRankings)
-                    {
-                        <li class="catchup-shared-map">
-                            <div class="catchup-shared-map-header">
-                                <strong>@ranking.MapName</strong>
-                                <span class="catchup-gap">@Localizer.Format("catchup.sharedMaps.count", ("count", ranking.Count))</span>
-                            </div>
+                            <button class="catchup-shared-map-header" type="button" title="@Localizer["catchup.map.filterHint"]"
+                                    @onclick="() => MapFilterRequested.InvokeAsync(map.MapId)">
+                                <strong>@map.MapName</strong>
+                                <span class="catchup-gap">@Localizer.Format("catchup.playerMaps.count", ("count", map.Count))</span>
+                            </button>
                             <ul class="catchup-shared-map-quests">
-                                @foreach (var name in ranking.QuestNames)
+                                @foreach (var name in map.QuestNames)
                                 {
                                     <li>@name</li>
                                 }
@@ -85,7 +89,7 @@
 @code {
     private RenderFragment RenderChain(CatchUpChainDto chain) => @<section class="catchup-chain">
         <button class="catchup-trader" type="button" title="@Localizer.Format("catchup.gap.detail", ("primary", chain.PrimaryCompletedCount), ("comparison", chain.ComparisonCompletedCount))"
-                @onclick="() => ChainSelected.InvokeAsync(chain.TraderId)">
+                @onclick="() => TraderFilterRequested.InvokeAsync(chain.TraderId)">
             <img src="@(chain.TraderImageUrl ?? "/files/trader/avatar/unknown.png")" alt="">
             <strong>@chain.TraderName</strong>
             <span class="catchup-gap">@Localizer.Format("catchup.gap", ("count", chain.Gap))</span>
@@ -135,8 +139,11 @@
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
     [Parameter] public EventCallback<string> QuestSelected { get; set; }
 
-    /// <summary>Raised with a trader id when a whole chain is clicked, to focus it on the graph.</summary>
-    [Parameter] public EventCallback<string> ChainSelected { get; set; }
+    /// <summary>Raised with a trader id when a chain is clicked, to filter the graph to it.</summary>
+    [Parameter] public EventCallback<string> TraderFilterRequested { get; set; }
+
+    /// <summary>Raised with a map id when a map is clicked, to filter the graph to it.</summary>
+    [Parameter] public EventCallback<string> MapFilterRequested { get; set; }
 
     private RenderFragment RenderSeriesRow(string who, int furthest, int total, string role) => @<div class="catchup-series-row @role">
         <span class="catchup-series-who">@who</span>

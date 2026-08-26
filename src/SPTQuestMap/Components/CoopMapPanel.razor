@@ -45,7 +45,10 @@
                         @foreach (var row in State.CoopMapRows)
                         {
                             <tr class="@(row.SharedByAll > 0 ? "has-shared" : null)">
-                                <th scope="row">@row.MapName</th>
+                                <th scope="row">
+                                    <button type="button" class="coop-map-link" title="@Localizer["coop.map.filterHint"]"
+                                            @onclick="() => MapFilterRequested.InvokeAsync(row.MapId)">@row.MapName</button>
+                                </th>
                                 @foreach (var count in row.PerProfile)
                                 {
                                     var unique = row.UniqueToProfile.FirstOrDefault(entry => entry.ProfileId == count.ProfileId)?.QuestIds.Count ?? 0;
@@ -54,7 +57,10 @@
                                         @unique
                                         @if (behind.Count > 0)
                                         {
-                                            <span class="coop-behind" title="@BehindTooltip(behind)">+@behind.Max(entry => entry.Furthest)</span>
+                                            <button type="button" class="coop-behind"
+                                                    @onmouseenter="() => ShowDetail(row, behind)"
+                                                    @onfocus="() => ShowDetail(row, behind)"
+                                                    @onclick="() => ShowDetail(row, behind)">+@behind.Max(entry => entry.Furthest)</button>
                                         }
                                     </td>
                                 }
@@ -64,6 +70,31 @@
                     </tbody>
                 </table>
             </div>
+            @if (_detail is not null)
+            {
+                <div class="coop-detail">
+                    <div class="coop-detail-head">
+                        <strong>@_detail.MapName</strong>
+                        <button type="button" class="coop-detail-close" @onclick="() => _detail = null">@Localizer["filter.close"]</button>
+                    </div>
+                    @foreach (var entry in _detail.Behind)
+                    {
+                        <p class="coop-detail-lead">
+                            @Localizer.Format("coop.cell.behind", ("profile", entry.Label), ("count", entry.Count), ("steps", entry.Furthest))
+                        </p>
+                        <ol class="coop-detail-quests">
+                            @foreach (var name in entry.Blocking.Take(BlockingListLimit))
+                            {
+                                <li>@name</li>
+                            }
+                        </ol>
+                        @if (entry.Blocking.Count > BlockingListLimit)
+                        {
+                            <p class="coop-detail-more">@Localizer.Format("coop.cell.andMore", ("count", entry.Blocking.Count - BlockingListLimit))</p>
+                        }
+                    }
+                </div>
+            }
             <p class="coop-footnote">@Localizer["coop.footnote"]</p>
             <p class="coop-footnote">@Localizer["coop.behind.legend"]</p>
         }
@@ -78,6 +109,9 @@
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
     [Parameter] public EventCallback<IReadOnlySet<string>> PoolChanged { get; set; }
 
+    /// <summary>Raised with a map id when a map name is clicked, to filter the graph to it.</summary>
+    [Parameter] public EventCallback<string> MapFilterRequested { get; set; }
+
     /// <summary>
     /// The column shows only what is unique to this player here; the total they still have on
     /// the map goes in the tooltip so the number is still reachable.
@@ -90,25 +124,16 @@
             ("map", row.MapName));
 
     /// <summary>
-    /// Names the quests each lagging player must finish to reach this player's unique work,
-    /// closest first. Capped, because a deep chain would otherwise produce a tooltip taller
-    /// than the window.
+    /// Fills the detail block under the table. Replaces a native `title`: it carried newlines,
+    /// which browsers render inconsistently, and it was clipped by the table's own horizontal
+    /// scroller. A block below the table cannot be clipped and needs no positioning maths.
     /// </summary>
-    private string BehindTooltip(IReadOnlyList<CoopBehindDto> behind)
-    {
-        var lines = new List<string>();
-        foreach (var entry in behind)
-        {
-            lines.Add(Localizer.Format("coop.cell.behind",
-                ("profile", entry.Label), ("count", entry.Count), ("steps", entry.Furthest)));
-            lines.AddRange(entry.Blocking.Take(BlockingListLimit).Select(name => "  · " + name));
-            if (entry.Blocking.Count > BlockingListLimit)
-            {
-                lines.Add(Localizer.Format("coop.cell.andMore", ("count", entry.Blocking.Count - BlockingListLimit)));
-            }
-        }
-        return string.Join("\n", lines);
-    }
+    private void ShowDetail(CoopMapRow row, IReadOnlyList<CoopBehindDto> behind)
+        => _detail = new BehindDetail(row.MapName, behind);
+
+    private BehindDetail? _detail;
+
+    private sealed record BehindDetail(string MapName, IReadOnlyList<CoopBehindDto> Behind);
 
     private const int BlockingListLimit = 8;
 

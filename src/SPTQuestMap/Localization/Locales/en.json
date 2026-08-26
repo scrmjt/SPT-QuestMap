@@ -232,5 +232,11 @@
   "coop.cell.behind": "{profile} is up to {steps} task(s) away from {count} of them",
   "coop.behind.legend": "+N = how many tasks the furthest-behind player must still finish before they can join the quests only this player can do here.",
   "coop.cell.unique": "{unique} quest(s) only {profile} still needs on {map} ({total} outstanding there in total)",
-  "coop.cell.andMore": "  … and {count} more"
+  "coop.cell.andMore": "  … and {count} more",
+  "catchup.playerMaps.title": "Best Maps for {profile} to Catch Up",
+  "catchup.playerMaps.count": "{count} behind",
+  "catchup.series.needs": "{profile} still needs:",
+  "catchup.map.filterHint": "Filter the graph to this map",
+  "catchup.chain.filterHint": "Filter the graph to this trader",
+  "coop.map.filterHint": "Filter the graph to this map"
 }

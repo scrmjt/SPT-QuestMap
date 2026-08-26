@@ -221,6 +221,27 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .in-progress-quest-header strong { overflow: hidden; color: #e2ded2; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
 /* Coop Map Helper: a compact matrix, so it scrolls sideways inside the panel rather than
    widening it - a column is added per player and the panel width is fixed. */
+/* Clickable map names and chain headers: they narrow the graph like the filter menu. */
+.coop-map-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.coop-map-link:hover { color: #f0e6bf; text-decoration: underline; }
+.coop-behind { padding: 0 .12rem; border: 0; background: none; color: #c9884f; cursor: pointer; font-size: .54rem; font-weight: 700; }
+.coop-behind:hover { color: #e5a771; }
+.coop-detail { margin-top: .45rem; padding: .45rem .5rem; border: 1px solid #3a3f38; border-radius: 4px; background: #171b16; }
+.coop-detail-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .25rem; font-size: .66rem; }
+.coop-detail-close { padding: 0 .25rem; border: 0; background: none; color: #8f958c; cursor: pointer; font-size: .56rem; }
+.coop-detail-close:hover { color: #cfd2c8; }
+.coop-detail-lead { margin: .25rem 0 .1rem; color: #c9884f; font-size: .58rem; font-weight: 700; }
+.coop-detail-quests { margin: 0; padding-left: 1rem; color: #cfd2c8; font-size: .58rem; line-height: 1.45; }
+.coop-detail-more { margin: .1rem 0 0; color: #7d8471; font-size: .55rem; }
+/* Series catch-up: the exact quests, in the order they unlock. */
+.catchup-series-lead { margin: .3rem 0 .12rem; color: #c9884f; font-size: .58rem; font-weight: 700; }
+.catchup-series-quests { margin: 0; padding-left: .9rem; font-size: .6rem; line-height: 1.45; }
+.catchup-series-quests button { display: block; width: 100%; padding: .08rem .15rem; border: 0; background: none; color: #cfd2c8; text-align: left; cursor: pointer; }
+.catchup-series-quests button:hover { color: #f0e6bf; background: #232821; }
+.catchup-series-quest-map { margin-left: .25rem; color: #8f958c; font-size: .92em; }
+button.catchup-shared-map-header { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: .4rem; padding: .18rem .25rem; border: 0; border-radius: 3px; background: none; color: inherit; text-align: left; cursor: pointer; }
+button.catchup-shared-map-header:hover { background: #232821; color: #f0e6bf; }
+
 .coop-panel { position: relative; z-index: 3; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border: 1px solid #3a3f38; border-radius: 6px; background: rgba(18,22,19,.96); transition: width .18s ease; }
 .coop-panel:not(.expanded) { flex: 0 0 auto; width: 174px; height: 34px; }
 .coop-panel.expanded { flex: 1 1 auto; width: 320px; }

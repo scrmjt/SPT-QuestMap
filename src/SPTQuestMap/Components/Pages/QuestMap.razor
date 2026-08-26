@@ -18,8 +18,8 @@
         <main class="workspace">
             <div class="side-views">
                 <InProgressDrawer State="@State" Localizer="@Localizer" ExpandedChanged="SetDrawerExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
-                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" ChainSelected="FocusChainAsync" />
-                <CoopMapPanel State="@State" Localizer="@Localizer" Profiles="@Profiles" Expanded="@CoopExpanded" ExpandedChanged="SetCoopExpandedAsync" PoolChanged="SetCoopPoolAsync" />
+                <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" TraderFilterRequested="FilterToTraderAsync" MapFilterRequested="FilterToMapAsync" />
+                <CoopMapPanel State="@State" Localizer="@Localizer" Profiles="@Profiles" Expanded="@CoopExpanded" ExpandedChanged="SetCoopExpandedAsync" PoolChanged="SetCoopPoolAsync" MapFilterRequested="FilterToMapAsync" />
             </div>
             <section class="viewport @(State.InProgressExpanded ? "progress-panel-open" : null)" aria-label="@Localizer["graph.aria"]" @ref="ViewportElement">
                 <canvas id="graph" tabindex="0" aria-label="@Localizer["graph.canvasAria"]" @ref="CanvasElement"></canvas>
@@ -205,6 +205,17 @@
         if (Module is not null) await Module.InvokeVoidAsync("centerQuest", id);
         await SaveSettingsAsync();
     }
+
+    /// <summary>
+    /// Clicking a map or a chain narrows the graph exactly as the filter menu does, replacing
+    /// the current selection rather than adding to it: the click means "show me this", and
+    /// accumulating would need a second gesture to undo.
+    /// </summary>
+    private Task FilterToMapAsync(string mapId)
+        => ChangeViewAsync(() => State.SetMapFilter(new HashSet<string>(new[] { mapId }, StringComparer.Ordinal)));
+
+    private Task FilterToTraderAsync(string traderId)
+        => ChangeViewAsync(() => State.SetTraderFilter(new HashSet<string>(new[] { traderId }, StringComparer.Ordinal)));
 
     /// <summary>
     /// Clicking a catch-up chain focuses it on the graph: select the earliest quest the
