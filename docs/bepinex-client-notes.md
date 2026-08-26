@@ -182,6 +182,41 @@ is not jank - it is the honest initial state, and the switch becomes user-driven
 a race against layout and server data. Prefer this over the `CanvasGroup` veil if the tab is
 going to be built anyway; the veil is the smaller fix if the takeover model stays.
 
+## 5. Planned: COOP MAP HELPER and CATCH UP buttons
+
+These go in the **mod's own header strip** — the one that already has "Tasks" and "Quest Map"
+(`GlobalTasksScreenController.BuildGlobalChrome`, the two `AddHeaderButton` calls for
+`InProgressTab` at x=12 and `QuestMapTab` at x=130) — **not** beside the game's native task
+selectors.
+
+> An earlier attempt added tabs next to the vanilla "Active Tasks" / "Operational Tasks"
+> toggles and was reverted (commit `40274af`, reverted immediately after). The technique is
+> recorded in section 4 in case it is ever wanted; it is not the direction here.
+
+### Decisions taken
+
+- **Coop columns: one per profile, plus a single "all shared" column.** Not the full power
+  set: subsets of N profiles are 2^N − 1, which is 15 columns at four players and 31 at five,
+  against roughly a dozen map rows. Past three players nobody picks a map by which particular
+  pair overlaps.
+- **Build order: web UI first**, then the server compare route, then the Unity views. The Core
+  rules carry over unchanged, and iterating in a browser does not require relaunching Tarkov.
+
+### State
+
+| Piece | Status |
+| --- | --- |
+| `CoopMapRules` — per-map, per-profile and all-shared counts | **Done**, 8 tests |
+| `PoolCatchUpRules` — per-chain leader/laggard, steps-behind, maps by summed steps-behind | **Done**, 7 tests |
+| Both views in the Blazor UI | Not started |
+| Server compare route (Core-shaped payload) | Not started — **blocks the in-game versions** |
+| Unity views | Not started |
+
+`CoopMapRules` deliberately treats a quest as shared only when **every** selected profile still
+needs it; a profile that cannot take the quest at all excludes it, because the group cannot
+close it out together. Guarded by
+`CoopMapRulesTests.BuildRows_ExcludesQuestsAProfileCannotTakeFromTheSharedCount`.
+
 ## 4. Rules that must not be "tidied" into Core
 
 Both exist because Core is shared, and pushing browser-only concepts down breaks the plugin
