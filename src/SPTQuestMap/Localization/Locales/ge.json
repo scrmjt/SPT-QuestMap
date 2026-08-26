@@ -214,5 +214,14 @@
   "catchup.gatedQuests": "{count} gesperrt",
   "catchup.maps.title": "Beste Karten zum Aufholen",
   "catchup.maps.count": "{count} Aufhol-Quests",
-  "level.any": "Jede Stufe"
+  "level.any": "Jede Stufe",
+  "coop.title": "Koop-Kartenhelfer",
+  "coop.pick": "Spieler wählen",
+  "coop.search": "Profile suchen",
+  "coop.selectedCount": "{0} Spieler",
+  "coop.none": "Wähle zwei oder mehr Spieler, um Karten zu vergleichen.",
+  "coop.noWork": "Keine offenen Raid-Quests für diese Spieler.",
+  "coop.shared": "Alle",
+  "coop.shared.detail": "Quests, für die jeder gewählte Spieler hier noch einen Raid braucht",
+  "coop.footnote": "Gezählt werden Quests, die noch einen Raid brauchen. Quests ohne Ort werden ausgeschlossen."
 }

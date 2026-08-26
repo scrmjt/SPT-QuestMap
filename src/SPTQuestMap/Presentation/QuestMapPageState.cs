@@ -101,6 +101,61 @@ public sealed class QuestMapPageState
     public IReadOnlyList<SharedMapRankingDto> CatchUpMapRankings { get; private set; } = [];
 
     /// <summary>
+    /// Profiles in the co-op pool. Separate from the pairwise primary/comparison pair on
+    /// purpose: the graph tiles and difference categories are inherently two-way, so the pool
+    /// feeds the co-op panels only and leaves compare mode untouched.
+    /// </summary>
+    public IReadOnlyList<ProfileStateDto> PoolProfiles { get; private set; } = [];
+
+    public IReadOnlySet<string> PoolProfileIds { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>Per map: what each pooled profile still has to raid for, and the overlap.</summary>
+    public IReadOnlyList<CoopMapRow> CoopMapRows { get; private set; } = [];
+
+    public void SetPoolProfiles(IReadOnlyList<ProfileStateDto> profiles)
+    {
+        PoolProfiles = profiles;
+        PoolProfileIds = new HashSet<string>(profiles.Select(profile => profile.ProfileId), StringComparer.Ordinal);
+        BuildCoopMapRows();
+    }
+
+    /// <summary>
+    /// Projects the pooled profiles onto <see cref="CoopMapRules"/>. Only raidable locations
+    /// take part: "out of raid", "any" and "transition" are not places you can agree to meet,
+    /// which is the same exclusion the shared-map ranking makes.
+    /// </summary>
+    private void BuildCoopMapRows()
+    {
+        if (Topology is null || PoolProfiles.Count == 0) { CoopMapRows = []; return; }
+
+        var facts = new List<CoopMapQuestFact>();
+        foreach (var profile in PoolProfiles)
+        {
+            var applicable = new HashSet<string>(profile.AllApplicableQuestIds, StringComparer.Ordinal);
+            var states = profile.Quests.ToDictionary(quest => quest.QuestId, StringComparer.Ordinal);
+            foreach (var questId in applicable)
+            {
+                if (!NeedsRaid(states.GetValueOrDefault(questId))) continue;
+                if (!_nodeMaps.TryGetValue(questId, out var maps)) continue;
+                foreach (var map in maps)
+                {
+                    if (!IsRaidableMap(map.Id)) continue;
+                    facts.Add(new CoopMapQuestFact(profile.ProfileId, questId, map.Id, map.Name));
+                }
+            }
+        }
+
+        CoopMapRows = CoopMapRules.BuildRows(facts, PoolProfiles.Select(profile => profile.ProfileId).ToArray());
+    }
+
+    /// <summary>Display name for a pooled profile, for column headers.</summary>
+    public string PoolProfileLabel(string profileId)
+    {
+        var profile = PoolProfiles.FirstOrDefault(item => item.ProfileId == profileId);
+        return FilterFriendlyName(profile?.Nickname, ProfileLabelRules.ShortLabel(profile?.Nickname, profileId, 5));
+    }
+
+    /// <summary>
     /// Compare-mode slot labels: the first two characters of each profile's nickname,
     /// falling back to "A"/"B" when a profile has no usable nickname. These are display
     /// text only — never branch on them to tell the two slots apart, because two profiles
@@ -211,6 +266,7 @@ public sealed class QuestMapPageState
         PruneUnselectableMapFilter();
         BuildComparisons();
         RebuildCatchUpModel();
+        BuildCoopMapRows();
         _incoming = GroupEdges(topology.Edges, edge => edge.TargetId);
         _outgoing = GroupEdges(topology.Edges, edge => edge.SourceId);
         RestoreCurrentProfileSettings();

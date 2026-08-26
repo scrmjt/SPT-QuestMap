@@ -185,6 +185,18 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 passed its unit tests and read as correct; it only surfaced when run against two real profiles.
 For anything ranking/filtering real quest data, check the live output before calling it done.
 
+- **The co-op profile pool is separate from the pairwise primary/comparison pair.**
+  `PoolProfiles` / `PoolProfileIds` feed the Coop Map Helper only. The graph tiles draw exactly
+  two status lanes and the difference categories are inherently two-way, so widening compare
+  mode to N profiles would break both; picking co-op players must never disturb it.
+- **The co-op matrix counts only raidable maps.** "Out of raid", "any" and "transition" are
+  excluded - you cannot agree to meet at "any location", and an any-map quest contributes
+  equally to every row so it cannot discriminate between them. Same exclusion the shared-map
+  ranking makes.
+- **"All" means every selected profile still needs it.** A profile that cannot take a quest at
+  all excludes it from the shared count, because the group cannot close it out together. So the
+  shared number can be lower than the per-profile columns suggest - that is correct, not a bug.
+
 ## In-game (BepInEx) client
 
 See **`docs/bepinex-client-notes.md`** for the worked-out notes: how the plugin gets its data

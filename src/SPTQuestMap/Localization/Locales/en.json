@@ -218,5 +218,14 @@
   "catchup.gatedQuests": "{count} gated",
   "catchup.maps.title": "Best Maps to Catch Up",
   "catchup.maps.count": "{count} catch-up",
-  "level.any": "Any level"
+  "level.any": "Any level",
+  "coop.title": "Coop Map Helper",
+  "coop.pick": "Choose players",
+  "coop.search": "Search profiles",
+  "coop.selectedCount": "{0} players",
+  "coop.none": "Pick two or more players to compare maps.",
+  "coop.noWork": "No raidable quests outstanding for these players.",
+  "coop.shared": "All",
+  "coop.shared.detail": "Quests every selected player still needs a raid here for",
+  "coop.footnote": "Counts are quests still needing a raid. Out-of-raid and any-location quests are excluded."
 }

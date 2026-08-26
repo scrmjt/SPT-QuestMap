@@ -19,6 +19,7 @@
             <div class="side-views">
                 <InProgressDrawer State="@State" Localizer="@Localizer" ExpandedChanged="SetDrawerExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
                 <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" ChainSelected="FocusChainAsync" />
+                <CoopMapPanel State="@State" Localizer="@Localizer" Profiles="@Profiles" Expanded="@CoopExpanded" ExpandedChanged="SetCoopExpandedAsync" PoolChanged="SetCoopPoolAsync" />
             </div>
             <section class="viewport @(State.InProgressExpanded ? "progress-panel-open" : null)" aria-label="@Localizer["graph.aria"]" @ref="ViewportElement">
                 <canvas id="graph" tabindex="0" aria-label="@Localizer["graph.canvasAria"]" @ref="CanvasElement"></canvas>
@@ -223,6 +224,32 @@
         await SynchronizeRendererAsync();
         if (Module is not null) await Module.InvokeVoidAsync("centerQuest", target.QuestId);
         await SaveSettingsAsync();
+    }
+
+    private bool CoopExpanded;
+
+    private Task SetCoopExpandedAsync(bool value)
+    {
+        CoopExpanded = value;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Loads full quest state for each pooled profile. Kept separate from compare mode: the
+    /// pool feeds the co-op panel only, so switching players here never disturbs the pairwise
+    /// graph comparison.
+    /// </summary>
+    private Task SetCoopPoolAsync(IReadOnlySet<string> profileIds)
+    {
+        var language = Bootstrap?.Language;
+        var loaded = profileIds
+            .Select(id => DataService.GetProfileState(id, language))
+            .Where(state => state is not null)
+            .Cast<ProfileStateDto>()
+            .OrderBy(state => state.Nickname, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+        State.SetPoolProfiles(loaded);
+        return Task.CompletedTask;
     }
 
     private async Task SelectRelationAsync(string id)

@@ -1,0 +1,77 @@
+@using System.Linq
+
+<aside class="coop-panel @(Expanded ? "expanded" : null)" aria-label="@Localizer["coop.title"]">
+    <button class="coop-toggle" type="button" aria-expanded="@Expanded.ToString().ToLowerInvariant()" title="@Localizer["coop.title"]" @onclick="() => ExpandedChanged.InvokeAsync(!Expanded)">
+        <span class="coop-title">@Localizer["coop.title"]</span><span class="coop-chevron" aria-hidden="true">@(Expanded ? "‹" : "›")</span>
+    </button>
+    <div class="coop-content">
+        <label class="coop-picker">
+            <span class="sr-only">@Localizer["coop.pick"]</span>
+            <FilterDropdown Items="@ProfileItems()"
+                            Selected="@State.PoolProfileIds"
+                            AllLabel="@Localizer["coop.pick"]"
+                            SearchPlaceholder="@Localizer["coop.search"]"
+                            SelectAllLabel="@Localizer["filter.selectAll"]"
+                            ClearLabel="@Localizer["filter.clear"]"
+                            SelectedCountFormat="@Localizer["coop.selectedCount"]"
+                            CloseLabel="@Localizer["filter.close"]"
+                            SelectionChanged="PoolChanged" />
+        </label>
+
+        @if (State.PoolProfiles.Count == 0)
+        {
+            <p class="coop-empty">@Localizer["coop.none"]</p>
+        }
+        else if (State.CoopMapRows.Count == 0)
+        {
+            <p class="coop-empty">@Localizer["coop.noWork"]</p>
+        }
+        else
+        {
+            <div class="coop-table-scroll">
+                <table class="coop-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">@Localizer["map.label"]</th>
+                            @foreach (var profile in State.PoolProfiles)
+                            {
+                                <th scope="col" title="@profile.Nickname">@State.PoolProfileLabel(profile.ProfileId)</th>
+                            }
+                            <th scope="col" class="coop-shared-col" title="@Localizer["coop.shared.detail"]">@Localizer["coop.shared"]</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in State.CoopMapRows)
+                        {
+                            <tr class="@(row.SharedByAll > 0 ? "has-shared" : null)">
+                                <th scope="row">@row.MapName</th>
+                                @foreach (var count in row.PerProfile)
+                                {
+                                    <td class="@(count.Count == 0 ? "zero" : null)">@count.Count</td>
+                                }
+                                <td class="coop-shared-col @(row.SharedByAll == 0 ? "zero" : null)">@row.SharedByAll</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="coop-footnote">@Localizer["coop.footnote"]</p>
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public QuestMapPageState State { get; set; } = default!;
+    [Parameter, EditorRequired] public QuestMapLocalizer Localizer { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<ProfileSummaryDto> Profiles { get; set; } = default!;
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+    [Parameter] public EventCallback<IReadOnlySet<string>> PoolChanged { get; set; }
+
+    private IReadOnlyList<FilterDropdown.FilterDropdownItem> ProfileItems()
+        => Profiles
+            .Select(profile => new FilterDropdown.FilterDropdownItem(
+                profile.Id,
+                $"{profile.Nickname} · {profile.Level}"))
+            .ToArray();
+}
