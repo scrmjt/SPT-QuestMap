@@ -238,5 +238,6 @@
   "catchup.series.needs": "{profile} still needs:",
   "catchup.map.filterHint": "Filter the graph to this map",
   "catchup.chain.filterHint": "Filter the graph to this trader",
-  "coop.map.filterHint": "Filter the graph to this map"
+  "coop.map.filterHint": "Filter the graph to this map",
+  "coop.shared.heading": "{count} quest(s) every player still needs here"
 }

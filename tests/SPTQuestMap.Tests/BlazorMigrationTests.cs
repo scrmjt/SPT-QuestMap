@@ -125,31 +125,38 @@ public sealed class BlazorMigrationTests
     }
 
     [Test]
-    public void ProfileSelectorNamesUseTheFullContentAreaAboveBackgroundLevels()
+    public void ProfileSelectorsStayNarrowEnoughForTheSidebar()
     {
         Assert.Multiple(() =>
         {
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain("grid-template-columns: 48px minmax(0,1fr) 20px;"),
-                "The ordinary selector must not reserve a foreground column for the level watermark.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain("grid-template-columns: 24px 40px minmax(0,1fr) 18px;"),
-                "Comparison selectors must not reserve a foreground column for the level watermark.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-name, .profile-option-name { position: relative; z-index: 1;"));
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain("white-space: normal;"));
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-level, .profile-option-level { position: absolute; z-index: 0;"),
-                "Level numbers must be decorative background content rather than layout columns.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain("inset-block: 0; display: flex;"),
-                "The oversized level glyph must be clipped vertically by the selector height.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain("font: 700 5rem/1 Georgia,serif;"),
-                "The background level must be oversized enough to clip at both vertical edges.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain("opacity: .28; pointer-events: none;"),
-                "The watermark must remain readable against the live selector background.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-level { right: calc(.55rem + 20px + .65rem - 13px); width: 90px; }"),
-                "The ordinary watermark must preserve the original right-side center point.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".compare-profile .profile-level { right: calc(.55rem + 18px + .42rem - 13px); }"),
-                "Comparison watermarks must preserve the original right-side center point.");
-            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-option-level { right: 0; width: 84px; font-size: 4.5rem; opacity: .25;"),
-                "Dropdown watermarks must remain oversized on the right.");
+            Assert.That(QuestMapEmbeddedAssets.Css, Does.Not.Contain("grid-template-columns: 48px minmax(0,1fr) 20px;"),
+                "The faction emblem column was the widest element in the sidebar and is gone.");
+            Assert.That(QuestMapEmbeddedAssets.Css, Does.Not.Contain("font: 700 5rem/1 Georgia,serif;"),
+                "The oversized level watermark is gone; the level now sits in the meta line.");
+            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-identity { display: flex; min-width: 0; flex-direction: column;"),
+                "Nickname and meta line stack, so the chip stays as narrow as the sidebar.");
+            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-meta {"),
+                "Faction and level share one small line under the nickname.");
+            Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".profile-field { position: relative; display: block; width: 100%; min-width: 0;"),
+                "The chip must fill the sidebar rather than force a minimum width on it.");
         });
+    }
+
+    [Test]
+    public void FilterDropdownPanelsFlowInsteadOfOverlaying()
+    {
+        // The sidebar scrolls vertically, and a scrolling axis makes the other axis clip too,
+        // so an absolutely positioned panel is cut off by the sidebar edge. Flowing in place
+        // pushes the controls below it instead, which cannot be clipped.
+        Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".filter-dropdown-panel { position: static;"),
+            "Dropdown panels must not be absolutely positioned inside the scrolling sidebar.");
+    }
+
+    [Test]
+    public void FilterDropdownsCarryVisibleCaptions()
+    {
+        Assert.That(QuestMapEmbeddedAssets.Css, Does.Contain(".filter-dropdown-caption {"),
+            "Trader and map dropdowns both read 'All' when empty and need visible labels.");
     }
 
     [Test]

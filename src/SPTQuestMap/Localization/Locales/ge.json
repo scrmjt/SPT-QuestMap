@@ -234,5 +234,6 @@
   "catchup.series.needs": "{profile} braucht noch:",
   "catchup.map.filterHint": "Graph auf diese Karte filtern",
   "catchup.chain.filterHint": "Graph auf diesen Händler filtern",
-  "coop.map.filterHint": "Graph auf diese Karte filtern"
+  "coop.map.filterHint": "Graph auf diese Karte filtern",
+  "coop.shared.heading": "{count} Quest(s), die hier jeder Spieler noch braucht"
 }

@@ -64,7 +64,19 @@
                                         }
                                     </td>
                                 }
-                                <td class="coop-shared-col @(row.SharedByAll == 0 ? "zero" : null)">@row.SharedByAll</td>
+                                <td class="coop-shared-col @(row.SharedByAll == 0 ? "zero" : null)">
+                                    @if (row.SharedByAll > 0)
+                                    {
+                                        <button type="button" class="coop-shared-link"
+                                                @onmouseenter="() => ShowShared(row)"
+                                                @onfocus="() => ShowShared(row)"
+                                                @onclick="() => ShowShared(row)">@row.SharedByAll</button>
+                                    }
+                                    else
+                                    {
+                                        @row.SharedByAll
+                                    }
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -77,20 +89,20 @@
                         <strong>@_detail.MapName</strong>
                         <button type="button" class="coop-detail-close" @onclick="() => _detail = null">@Localizer["filter.close"]</button>
                     </div>
-                    @foreach (var entry in _detail.Behind)
+                    @foreach (var part in _detail.Sections)
                     {
-                        <p class="coop-detail-lead">
-                            @Localizer.Format("coop.cell.behind", ("profile", entry.Label), ("count", entry.Count), ("steps", entry.Furthest))
-                        </p>
+                        <p class="coop-detail-lead">@part.Label</p>
                         <ol class="coop-detail-quests">
-                            @foreach (var name in entry.Blocking.Take(BlockingListLimit))
+                            @foreach (var quest in part.Quests.Take(BlockingListLimit))
                             {
-                                <li>@name</li>
+                                <li>
+                                    <button type="button" @onclick="() => QuestSelected.InvokeAsync(quest.QuestId)">@quest.Name</button>
+                                </li>
                             }
                         </ol>
-                        @if (entry.Blocking.Count > BlockingListLimit)
+                        @if (part.Quests.Count > BlockingListLimit)
                         {
-                            <p class="coop-detail-more">@Localizer.Format("coop.cell.andMore", ("count", entry.Blocking.Count - BlockingListLimit))</p>
+                            <p class="coop-detail-more">@Localizer.Format("coop.cell.andMore", ("count", part.Quests.Count - BlockingListLimit))</p>
                         }
                     }
                 </div>
@@ -112,6 +124,9 @@
     /// <summary>Raised with a map id when a map name is clicked, to filter the graph to it.</summary>
     [Parameter] public EventCallback<string> MapFilterRequested { get; set; }
 
+    /// <summary>Raised with a quest id when a quest name is clicked, to select it on the graph.</summary>
+    [Parameter] public EventCallback<string> QuestSelected { get; set; }
+
     /// <summary>
     /// The column shows only what is unique to this player here; the total they still have on
     /// the map goes in the tooltip so the number is still reachable.
@@ -129,11 +144,25 @@
     /// scroller. A block below the table cannot be clipped and needs no positioning maths.
     /// </summary>
     private void ShowDetail(CoopMapRow row, IReadOnlyList<CoopBehindDto> behind)
-        => _detail = new BehindDetail(row.MapName, behind);
+        => _detail = new PanelDetail(
+            row.MapName,
+            behind
+                .Select(entry => new DetailSection(
+                    Localizer.Format("coop.cell.behind", ("profile", entry.Label), ("count", entry.Count), ("steps", entry.Furthest)),
+                    entry.Blocking))
+                .ToArray());
 
-    private BehindDetail? _detail;
+    /// <summary>The same block, listing the quests every pooled player still needs here.</summary>
+    private void ShowShared(CoopMapRow row)
+        => _detail = new PanelDetail(
+            row.MapName,
+            [new DetailSection(Localizer.Format("coop.shared.heading", ("count", row.SharedByAll)), State.CoopSharedQuests(row))]);
 
-    private sealed record BehindDetail(string MapName, IReadOnlyList<CoopBehindDto> Behind);
+    private PanelDetail? _detail;
+
+    private sealed record DetailSection(string Label, IReadOnlyList<QuestRefDto> Quests);
+
+    private sealed record PanelDetail(string MapName, IReadOnlyList<DetailSection> Sections);
 
     private const int BlockingListLimit = 8;
 

@@ -19,7 +19,7 @@
             <div class="side-views">
                 <InProgressDrawer State="@State" Localizer="@Localizer" ExpandedChanged="SetDrawerExpandedAsync" QuestSelected="SelectFromDrawerAsync" />
                 <CatchUpPanel State="@State" Localizer="@Localizer" ExpandedChanged="SetCatchUpExpandedAsync" QuestSelected="SelectFromDrawerAsync" TraderFilterRequested="FilterToTraderAsync" MapFilterRequested="FilterToMapAsync" />
-                <CoopMapPanel State="@State" Localizer="@Localizer" Profiles="@Profiles" Expanded="@CoopExpanded" ExpandedChanged="SetCoopExpandedAsync" PoolChanged="SetCoopPoolAsync" MapFilterRequested="FilterToMapAsync" />
+                <CoopMapPanel State="@State" Localizer="@Localizer" Profiles="@Profiles" Expanded="@CoopExpanded" ExpandedChanged="SetCoopExpandedAsync" PoolChanged="SetCoopPoolAsync" MapFilterRequested="FilterToMapAsync" QuestSelected="SelectFromDrawerAsync" />
             </div>
             <section class="viewport @(State.InProgressExpanded ? "progress-panel-open" : null)" aria-label="@Localizer["graph.aria"]" @ref="ViewportElement">
                 <canvas id="graph" tabindex="0" aria-label="@Localizer["graph.canvasAria"]" @ref="CanvasElement"></canvas>
@@ -115,6 +115,16 @@
             ? DataService.GetProfileState(SelectedComparisonProfile.Id, Bootstrap.Language)
             : null;
         State.SetData(topology, profile, comparisonProfile);
+        // Until the user picks their own set, the co-op pool mirrors the compare pair - the
+        // panel is otherwise empty on open and looks broken rather than unconfigured.
+        if (State.PoolFollowsCompare)
+        {
+            var seeded = new[] { profile, comparisonProfile }
+                .Where(state => state is not null)
+                .Cast<ProfileStateDto>()
+                .ToArray();
+            State.SetPoolProfiles(seeded, userChosen: false);
+        }
         BusyMessage = Profiles.Count == 0 ? Localizer["profiles.none"] : Localizer["loading.initial"];
     }
 

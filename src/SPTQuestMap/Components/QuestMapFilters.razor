@@ -27,7 +27,7 @@
         @{ var maps = State.FilterMaps(); }
         <div class="filter-dropdowns">
             <label class="filter-dropdown-label">
-                <span class="sr-only">@Localizer["trader.label"]</span>
+                <span class="filter-dropdown-caption">@Localizer["trader.label"]</span>
                 <FilterDropdown Items="@TraderItems()"
                                 Selected="@State.TraderFilter"
                                 AllLabel="@Localizer["trader.allShort"]"
@@ -42,7 +42,7 @@
             @if (maps.Count > 0)
             {
                 <label class="filter-dropdown-label">
-                    <span class="sr-only">@Localizer["map.label"]</span>
+                    <span class="filter-dropdown-caption">@Localizer["map.label"]</span>
                     <FilterDropdown Items="@MapItems(maps)"
                                     Selected="@State.MapFilter"
                                     AllLabel="@Localizer["map.allShort"]"

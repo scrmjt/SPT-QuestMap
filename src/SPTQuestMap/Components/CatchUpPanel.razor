@@ -73,9 +73,11 @@
                                 <span class="catchup-gap">@Localizer.Format("catchup.playerMaps.count", ("count", map.Count))</span>
                             </button>
                             <ul class="catchup-shared-map-quests">
-                                @foreach (var name in map.QuestNames)
+                                @foreach (var quest in map.Quests)
                                 {
-                                    <li>@name</li>
+                                    <li>
+                                        <button type="button" @onclick="() => QuestSelected.InvokeAsync(quest.QuestId)">@quest.Name</button>
+                                    </li>
                                 }
                             </ul>
                         </li>

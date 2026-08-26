@@ -9,9 +9,10 @@
                 <button class="profile-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="@ProfileMenuOpen.ToString().ToLowerInvariant()" aria-label="@(CompareMode ? Localizer["compare.profileA"] : Localizer["profile.aria"])" disabled="@(Busy || SelectedProfile is null)" @onclick="ToggleProfileMenu" @onkeydown="OnProfileKeyDown">
                     <span class="profile-select-face" aria-hidden="true">
                         @if (CompareMode) { <span class="profile-slot primary-slot">@ProfileLabelRules.ShortLabel(SelectedProfile?.Nickname, "A")</span> }
-                        <span class="profile-side-icon @SideClass(SelectedProfile?.Side)"></span>
-                        <strong class="profile-name">@(SelectedProfile?.Nickname ?? "—")</strong>
-                        <span class="profile-level">@(SelectedProfile?.Level.ToString() ?? "—")</span>
+                        <span class="profile-identity">
+                            <strong class="profile-name">@(SelectedProfile?.Nickname ?? "—")</strong>
+                            <span class="profile-meta">@SideLabel(SelectedProfile?.Side) · @(SelectedProfile?.Level.ToString() ?? "—")</span>
+                        </span>
                         <span class="profile-chevron">⌄</span>
                     </span>
                 </button>
@@ -23,7 +24,7 @@
                         {
                             var selected = profile.Id == SelectedProfile?.Id;
                             <button class="profile-option @(selected ? "selected" : null)" type="button" role="option" aria-selected="@selected.ToString().ToLowerInvariant()" title="@profile.Id" @onclick="() => SelectProfile(profile.Id)">
-                                <span class="profile-side-icon @SideClass(profile.Side)"></span>
+                                
                                 <strong class="profile-option-name">@profile.Nickname</strong>
                                 <span class="profile-option-level">@profile.Level</span>
                             </button>
@@ -52,7 +53,7 @@
                             {
                                 var selected = profile.Id == SelectedComparisonProfile?.Id;
                                 <button class="profile-option @(selected ? "selected" : null)" type="button" role="option" aria-selected="@selected.ToString().ToLowerInvariant()" title="@profile.Id" @onclick="() => SelectComparisonProfile(profile.Id)">
-                                    <span class="profile-side-icon @SideClass(profile.Side)"></span>
+                                    
                                     <strong class="profile-option-name">@profile.Nickname</strong>
                                     <span class="profile-option-level">@profile.Level</span>
                                 </button>
@@ -75,6 +76,12 @@
 </header>
 
 @code {
+    /// <summary>Faction as short text. Replaces the emblem image, which was the widest
+    /// element in the sidebar and carried no information the word does not.</summary>
+    private static string SideLabel(string? side)
+        => string.IsNullOrWhiteSpace(side) ? "—" : side!.ToUpperInvariant();
+
+
     [Parameter, EditorRequired] public QuestMapLocalizer Localizer { get; set; } = default!;
     [Parameter, EditorRequired] public IReadOnlyList<ProfileSummaryDto> Profiles { get; set; } = [];
     [Parameter] public ProfileSummaryDto? SelectedProfile { get; set; }

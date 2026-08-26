@@ -32,6 +32,9 @@ public sealed record CoopMapRow(
 
     /// <summary>Per profile, the quests here that nobody else in the pool still needs.</summary>
     public IReadOnlyList<CoopUniqueQuests> UniqueToProfile { get; init; } = Array.Empty<CoopUniqueQuests>();
+
+    /// <summary>The quests behind <see cref="SharedByAll"/>, so the count can be explained.</summary>
+    public IReadOnlyList<string> SharedQuestIds { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -80,12 +83,6 @@ public static class CoopMapRules
                     distinct.Count(fact => string.Equals(fact.ProfileId, profileId, StringComparison.Ordinal))))
                 .ToArray();
 
-            var sharedByAll = distinct
-                .GroupBy(fact => fact.QuestId, StringComparer.Ordinal)
-                .Count(questGroup => questGroup
-                    .Select(fact => fact.ProfileId)
-                    .Distinct(StringComparer.Ordinal)
-                    .Count() == profileIds.Count);
 
             var owners = distinct
                 .GroupBy(fact => fact.QuestId, StringComparer.Ordinal)
@@ -104,10 +101,17 @@ public static class CoopMapRules
                         .ToArray()))
                 .ToArray();
 
-            rows.Add(new CoopMapRow(group.Key, distinct[0].MapName, perProfile, sharedByAll)
+            var sharedQuestIds = owners
+                .Where(pair => pair.Value.Length == profileIds.Count)
+                .Select(pair => pair.Key)
+                .OrderBy(questId => questId, StringComparer.Ordinal)
+                .ToArray();
+
+            rows.Add(new CoopMapRow(group.Key, distinct[0].MapName, perProfile, sharedQuestIds.Length)
             {
                 AnyProfile = owners.Count,
                 UniqueToProfile = unique,
+                SharedQuestIds = sharedQuestIds,
             });
         }
 

@@ -133,7 +133,7 @@ public sealed class QuestMapPageState
             Func<string, QuestStateDto?> other,
             IReadOnlySet<string> applicable)
         {
-            var byMap = new Dictionary<string, (string Name, List<string> Quests)>(StringComparer.Ordinal);
+            var byMap = new Dictionary<string, (string Name, List<QuestRefDto> Quests)>(StringComparer.Ordinal);
             foreach (var node in _catchUpNodes)
             {
                 // Behind means: they finished it, this player has not, and this player can
@@ -146,8 +146,8 @@ public sealed class QuestMapPageState
                 foreach (var map in maps)
                 {
                     if (!IsRaidableMap(map.Id)) continue;
-                    if (!byMap.TryGetValue(map.Id, out var entry)) entry = (map.Name, new List<string>());
-                    entry.Quests.Add(node.Name);
+                    if (!byMap.TryGetValue(map.Id, out var entry)) entry = (map.Name, new List<QuestRefDto>());
+                    entry.Quests.Add(new QuestRefDto(node.Id, node.Name));
                     byMap[map.Id] = entry;
                 }
             }
@@ -157,7 +157,7 @@ public sealed class QuestMapPageState
                     pair.Key,
                     pair.Value.Name,
                     pair.Value.Quests.Count,
-                    pair.Value.Quests.OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).ToArray()))
+                    pair.Value.Quests.OrderBy(quest => quest.Name, StringComparer.CurrentCultureIgnoreCase).ToArray()))
                 .OrderByDescending(entry => entry.Count)
                 .ThenBy(entry => entry.MapName, StringComparer.CurrentCultureIgnoreCase)
                 .ToArray();
@@ -175,11 +175,18 @@ public sealed class QuestMapPageState
 
     public IReadOnlySet<string> PoolProfileIds { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// True while the pool mirrors the compare-mode pair. Cleared the moment the user picks
+    /// their own set, so an explicit choice is never overwritten by a profile switch.
+    /// </summary>
+    public bool PoolFollowsCompare { get; private set; } = true;
+
     /// <summary>Per map: what each pooled profile still has to raid for, and the overlap.</summary>
     public IReadOnlyList<CoopMapRow> CoopMapRows { get; private set; } = [];
 
-    public void SetPoolProfiles(IReadOnlyList<ProfileStateDto> profiles)
+    public void SetPoolProfiles(IReadOnlyList<ProfileStateDto> profiles, bool userChosen = true)
     {
+        if (userChosen) PoolFollowsCompare = false;
         PoolProfiles = profiles;
         PoolProfileIds = new HashSet<string>(profiles.Select(profile => profile.ProfileId), StringComparer.Ordinal);
         BuildCoopMapRows();
@@ -236,7 +243,7 @@ public sealed class QuestMapPageState
             var (furthest, count) = ChainDistanceRules.FurthestDistance(unique.QuestIds, _prerequisiteIds, completed);
             if (count == 0) continue;
             var blocking = ChainDistanceRules.UnmetPrerequisites(unique.QuestIds, _prerequisiteIds, completed)
-                .Select(questId => _nodeById.GetValueOrDefault(questId)?.Name ?? questId)
+                .Select(questId => new QuestRefDto(questId, _nodeById.GetValueOrDefault(questId)?.Name ?? questId))
                 .ToArray();
             results.Add(new CoopBehindDto(other.ProfileId, PoolProfileLabel(other.ProfileId), furthest, count, blocking));
         }
@@ -246,6 +253,13 @@ public sealed class QuestMapPageState
             .ThenBy(entry => entry.Label, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
+
+    /// <summary>Names for the quests every pooled profile still needs on a map.</summary>
+    public IReadOnlyList<QuestRefDto> CoopSharedQuests(CoopMapRow row)
+        => row.SharedQuestIds
+            .Select(questId => new QuestRefDto(questId, _nodeById.GetValueOrDefault(questId)?.Name ?? questId))
+            .OrderBy(quest => quest.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
 
     /// <summary>Display name for a pooled profile, for column headers.</summary>
     public string PoolProfileLabel(string profileId)
@@ -857,6 +871,7 @@ public sealed class QuestMapPageState
         BuildSharedMapRankings();
         BuildCatchUpChains();
         BuildCatchUpMapRankings();
+        BuildPlayerCatchUpMaps();
         BuildSeriesProgress();
     }
 
@@ -1331,10 +1346,13 @@ public sealed record MapQuestCounts(int Primary, int Comparison, int Shared);
 /// How far one pooled profile is from quests only another of them can currently do, plus the
 /// names of the quests standing in the way, closest first.
 /// </summary>
-public sealed record CoopBehindDto(string ProfileId, string Label, int Furthest, int Count, IReadOnlyList<string> Blocking);
+public sealed record CoopBehindDto(string ProfileId, string Label, int Furthest, int Count, IReadOnlyList<QuestRefDto> Blocking);
 
 /// <summary>A map worth running to close one player's gap, and what they are behind on there.</summary>
-public sealed record CatchUpMapEntryDto(string MapId, string MapName, int Count, IReadOnlyList<string> QuestNames);
+public sealed record CatchUpMapEntryDto(string MapId, string MapName, int Count, IReadOnlyList<QuestRefDto> Quests);
+
+/// <summary>A quest id paired with its display name, so a list entry can be clicked.</summary>
+public sealed record QuestRefDto(string QuestId, string Name);
 
 /// <summary>One player's catch-up map ranking.</summary>
 public sealed record PlayerCatchUpMapsDto(string ProfileId, string Label, IReadOnlyList<CatchUpMapEntryDto> Maps);
