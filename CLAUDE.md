@@ -185,6 +185,19 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 passed its unit tests and read as correct; it only surfaced when run against two real profiles.
 For anything ranking/filtering real quest data, check the live output before calling it done.
 
+- **Removing an element means fixing its grid template in the same edit.** The profile chips
+  declared `grid-template-columns: 24px 40px minmax(0,1fr) 18px` for four children; dropping
+  the faction emblem left three, so the nickname landed in the 40px emblem slot and rendered
+  as about two characters. Same bug twice more in the dropdown rows and the trigger face. If a
+  child goes, count the columns.
+- **The sidebar width is fluid (`clamp(13.5rem, 18vw, 20rem)`), not fixed.** It was 21rem to
+  fit the emblem and the 5rem level watermark, both since removed.
+- **Two-letter profile chips belong only where space is tight** - graph tiles and the
+  comparison table. Beside a full nickname they are redundant, so the profile selectors show
+  the name over a small "USEC · 8" line instead.
+- **Search the markup, not the page, when checking rendering.** The stylesheet is inlined into
+  the served HTML, so grepping for a class name matches its CSS rule and reports a removed
+  element as present. Strip `<style id="spt-questmap-styles">…</style>` first.
 - **The co-op profile pool is separate from the pairwise primary/comparison pair.**
   `PoolProfiles` / `PoolProfileIds` feed the Coop Map Helper only. The graph tiles draw exactly
   two status lanes and the difference categories are inherently two-way, so widening compare
