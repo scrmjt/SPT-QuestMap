@@ -12,7 +12,7 @@
                             <strong class="profile-name">@(SelectedProfile?.Nickname ?? "—")</strong>
                             <span class="profile-meta">@SideLabel(SelectedProfile?.Side) · @(SelectedProfile?.Level.ToString() ?? "—")</span>
                         </span>
-                        <span class="profile-chevron">⌄</span>
+                        <span class="profile-chevron">▾</span>
                     </span>
                 </button>
                 @if (ProfileMenuOpen)
@@ -41,7 +41,7 @@
                                 <strong class="profile-name">@(SelectedComparisonProfile?.Nickname ?? "-")</strong>
                                 <span class="profile-meta">@SideLabel(SelectedComparisonProfile?.Side) · @(SelectedComparisonProfile?.Level.ToString() ?? "-")</span>
                             </span>
-                            <span class="profile-chevron">⌄</span>
+                            <span class="profile-chevron">▾</span>
                         </span>
                     </button>
                     @if (ComparisonProfileMenuOpen)
@@ -61,7 +61,7 @@
                     }
                 </div>
             }
-            <label class="field language-field"><span>@Localizer["language.label"]</span>
+            <label class="field language-field has-chevron"><span>@Localizer["language.label"]</span>
                 <select value="@Localizer.Language" aria-label="@Localizer["language.aria"]" disabled="@Busy" @onchange="OnLanguageChanged">
                     @foreach (var language in Languages)
                     {

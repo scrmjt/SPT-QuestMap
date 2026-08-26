@@ -185,6 +185,16 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 passed its unit tests and read as correct; it only surfaced when run against two real profiles.
 For anything ranking/filtering real quest data, check the live output before calling it done.
 
+- **The app has a deliberate two-face type system: Georgia for headings, Inter for UI.**
+  Georgia is the `h1`, the quest title and the empty-details heading; everything a person
+  operates is Inter. A control wearing the display face reads as a mistake - the profile
+  selector did, and was corrected. Note that the headings use the `font:` shorthand, so
+  grepping `font-family:` undercounts and makes Georgia look like a one-off.
+- **One chevron for everything that opens.** The profile pickers, the language select and the
+  filter dropdowns used three mechanisms - a text glyph, the native select arrow, and a CSS
+  `::after`. They now share `--chevron-size`, `--muted` and the same glyph, with the native
+  select given `appearance: none` and a `.has-chevron` wrapper. Sidebar controls share
+  `--control-h` rather than the 44/34/32px mix they had.
 - **Removing an element means fixing its grid template in the same edit.** The profile chips
   declared `grid-template-columns: 24px 40px minmax(0,1fr) 18px` for four children; dropping
   the faction emblem left three, so the nickname landed in the 40px emblem slot and rendered
