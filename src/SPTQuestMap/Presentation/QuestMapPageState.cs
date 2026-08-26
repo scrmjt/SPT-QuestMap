@@ -173,7 +173,10 @@ public sealed class QuestMapPageState
                 StringComparer.Ordinal);
             var (furthest, count) = ChainDistanceRules.FurthestDistance(unique.QuestIds, _prerequisiteIds, completed);
             if (count == 0) continue;
-            results.Add(new CoopBehindDto(other.ProfileId, PoolProfileLabel(other.ProfileId), furthest, count));
+            var blocking = ChainDistanceRules.UnmetPrerequisites(unique.QuestIds, _prerequisiteIds, completed)
+                .Select(questId => _nodeById.GetValueOrDefault(questId)?.Name ?? questId)
+                .ToArray();
+            results.Add(new CoopBehindDto(other.ProfileId, PoolProfileLabel(other.ProfileId), furthest, count, blocking));
         }
 
         return results
@@ -1223,7 +1226,11 @@ public sealed record QuestGraphSnapshot(QuestTopologyDto Topology, ProfileStateD
 public sealed record MapQuestCounts(int Primary, int Comparison, int Shared);
 
 /// <summary>How far one pooled profile is from quests only another of them can currently do.</summary>
-public sealed record CoopBehindDto(string ProfileId, string Label, int Furthest, int Count);
+/// <summary>
+/// How far one pooled profile is from quests only another of them can currently do, plus the
+/// names of the quests standing in the way, closest first.
+/// </summary>
+public sealed record CoopBehindDto(string ProfileId, string Label, int Furthest, int Count, IReadOnlyList<string> Blocking);
 
 /// <summary>One kind of thing a quest asks for, and how much of it.</summary>
 public sealed record ObjectiveMixEntry(string Kind, int Amount);

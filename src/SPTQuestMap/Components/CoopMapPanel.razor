@@ -48,12 +48,13 @@
                                 <th scope="row">@row.MapName</th>
                                 @foreach (var count in row.PerProfile)
                                 {
+                                    var unique = row.UniqueToProfile.FirstOrDefault(entry => entry.ProfileId == count.ProfileId)?.QuestIds.Count ?? 0;
                                     var behind = State.CoopBehind(row, count.ProfileId);
-                                    <td class="@(count.Count == 0 ? "zero" : null)" title="@CellTooltip(row, count, behind)">
-                                        @count.Count
+                                    <td class="@(unique == 0 ? "zero" : null)" title="@CellTooltip(row, count, unique)">
+                                        @unique
                                         @if (behind.Count > 0)
                                         {
-                                            <span class="coop-behind">+@behind.Max(entry => entry.Furthest)</span>
+                                            <span class="coop-behind" title="@BehindTooltip(behind)">+@behind.Max(entry => entry.Furthest)</span>
                                         }
                                     </td>
                                 }
@@ -78,20 +79,38 @@
     [Parameter] public EventCallback<IReadOnlySet<string>> PoolChanged { get; set; }
 
     /// <summary>
-    /// Explains the cell: how much this player has here, and for the quests only they can do,
-    /// how far the others are from joining in. The number beside the count is the worst case,
-    /// because summing distances double counts shared prerequisites.
+    /// The column shows only what is unique to this player here; the total they still have on
+    /// the map goes in the tooltip so the number is still reachable.
     /// </summary>
-    private string CellTooltip(CoopMapRow row, CoopProfileCount count, IReadOnlyList<CoopBehindDto> behind)
-    {
-        var label = State.PoolProfileLabel(count.ProfileId);
-        var head = Localizer.Format("coop.cell.count", ("profile", label), ("count", count.Count), ("map", row.MapName));
-        if (behind.Count == 0) return head;
+    private string CellTooltip(CoopMapRow row, CoopProfileCount count, int unique)
+        => Localizer.Format("coop.cell.unique",
+            ("profile", State.PoolProfileLabel(count.ProfileId)),
+            ("unique", unique),
+            ("total", count.Count),
+            ("map", row.MapName));
 
-        var parts = behind.Select(entry =>
-            Localizer.Format("coop.cell.behind", ("profile", entry.Label), ("count", entry.Count), ("steps", entry.Furthest)));
-        return head + " · " + string.Join(" · ", parts);
+    /// <summary>
+    /// Names the quests each lagging player must finish to reach this player's unique work,
+    /// closest first. Capped, because a deep chain would otherwise produce a tooltip taller
+    /// than the window.
+    /// </summary>
+    private string BehindTooltip(IReadOnlyList<CoopBehindDto> behind)
+    {
+        var lines = new List<string>();
+        foreach (var entry in behind)
+        {
+            lines.Add(Localizer.Format("coop.cell.behind",
+                ("profile", entry.Label), ("count", entry.Count), ("steps", entry.Furthest)));
+            lines.AddRange(entry.Blocking.Take(BlockingListLimit).Select(name => "  · " + name));
+            if (entry.Blocking.Count > BlockingListLimit)
+            {
+                lines.Add(Localizer.Format("coop.cell.andMore", ("count", entry.Blocking.Count - BlockingListLimit)));
+            }
+        }
+        return string.Join("\n", lines);
     }
+
+    private const int BlockingListLimit = 8;
 
     private IReadOnlyList<FilterDropdown.FilterDropdownItem> ProfileItems()
         => Profiles

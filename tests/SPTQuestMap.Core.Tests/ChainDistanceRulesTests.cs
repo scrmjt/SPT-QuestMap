@@ -78,6 +78,40 @@ public sealed class ChainDistanceRulesTests
     }
 
     [Test]
+    public void UnmetPrerequisites_ListsTheBlockingQuestsClosestFirst()
+    {
+        // Reaching "d" means a, then b, then c. Listing them in that order makes the tooltip
+        // read as a plan rather than an unordered set.
+        Assert.That(
+            ChainDistanceRules.UnmetPrerequisites(["d"], Chain(), Done()),
+            Is.EqualTo(new[] { "a", "b", "c" }));
+    }
+
+    [Test]
+    public void UnmetPrerequisites_ExcludesWorkAlreadyDoneAndAnythingBehindIt()
+    {
+        Assert.That(
+            ChainDistanceRules.UnmetPrerequisites(["d"], Chain(), Done("b")),
+            Is.EqualTo(new[] { "c" }), "b is done, so a is settled too");
+    }
+
+    [Test]
+    public void UnmetPrerequisites_MergesTheBlockersOfSeveralTargets()
+    {
+        var graph = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["left"] = new[] { "root" },
+            ["right"] = new[] { "mid" },
+            ["mid"] = new[] { "root" },
+        };
+
+        // "root" blocks both targets but is one quest, listed once.
+        Assert.That(
+            ChainDistanceRules.UnmetPrerequisites(["left", "right"], graph, Done()),
+            Is.EqualTo(new[] { "root", "mid" }));
+    }
+
+    [Test]
     public void FurthestDistance_ReportsTheWorstCaseAndHowManyAreBehind()
     {
         var graph = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)

@@ -59,6 +59,47 @@ public static class ChainDistanceRules
     }
 
     /// <summary>
+    /// Every quest a player must still finish before they can reach any of
+    /// <paramref name="questIds"/> - the actual work standing between them and catching up.
+    ///
+    /// Ordered by how close each one is to being doable, so the first entry is something they
+    /// can start on now and the list reads as a plan rather than a set.
+    /// </summary>
+    public static IReadOnlyList<string> UnmetPrerequisites(
+        IEnumerable<string> questIds,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> prerequisites,
+        ISet<string> completed)
+    {
+        if (questIds is null) throw new ArgumentNullException(nameof(questIds));
+        if (prerequisites is null) throw new ArgumentNullException(nameof(prerequisites));
+        if (completed is null) throw new ArgumentNullException(nameof(completed));
+
+        var blocking = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var questId in questIds)
+        {
+            Collect(questId, new HashSet<string>(StringComparer.Ordinal) { questId });
+        }
+
+        return blocking
+            .OrderBy(id => UnmetPrerequisiteCount(id, prerequisites, completed))
+            .ThenBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+
+        void Collect(string id, HashSet<string> visited)
+        {
+            if (!prerequisites.TryGetValue(id, out var parents)) return;
+            foreach (var parent in parents)
+            {
+                if (!visited.Add(parent)) continue;
+                // A finished prerequisite settles its own ancestors, so stop there.
+                if (completed.Contains(parent)) continue;
+                blocking.Add(parent);
+                Collect(parent, visited);
+            }
+        }
+    }
+
+    /// <summary>
     /// The furthest a player is from any of <paramref name="questIds"/>, and how many of them
     /// they are behind on at all.
     ///

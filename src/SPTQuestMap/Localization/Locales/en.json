@@ -227,8 +227,10 @@
   "coop.noWork": "No raidable quests outstanding for these players.",
   "coop.shared": "All",
   "coop.shared.detail": "Quests every selected player still needs a raid here for",
-  "coop.footnote": "Counts are quests still needing a raid. Out-of-raid and any-location quests are excluded.",
+  "coop.footnote": "Player columns count quests only that player still needs here. Out-of-raid and any-location quests are excluded. Quests needed by some but not all players appear in neither column.",
   "coop.cell.count": "{profile} still needs {count} raid quest(s) on {map}",
   "coop.cell.behind": "{profile} is up to {steps} task(s) away from {count} of them",
-  "coop.behind.legend": "+N = how many tasks the furthest-behind player must still finish before they can join the quests only this player can do here."
+  "coop.behind.legend": "+N = how many tasks the furthest-behind player must still finish before they can join the quests only this player can do here.",
+  "coop.cell.unique": "{unique} quest(s) only {profile} still needs on {map} ({total} outstanding there in total)",
+  "coop.cell.andMore": "  … and {count} more"
 }
