@@ -47,9 +47,6 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private readonly QuestTrackingService _tracking;
     private readonly Action<string, QuestDetailsActionKind> _requestQuestRefresh;
     private readonly Dictionary<GameObject, bool> _nativeControlStates = new();
-    private NativeTaskTabStrip? _tabStrip;
-    private bool _tabsMode;
-    private bool _graphBuilt;
     private TasksPanel? _tasksPanel;
     private GameObject? _tasksDescription;
     private SimpleTooltip? _screenTooltip;
@@ -174,41 +171,16 @@ internal sealed class GlobalTasksScreenController : IDisposable
         var dailyToggle = ResolveSingleToggle(DailyToggleField, "daily quests");
         _notesToggle = ResolveSingleToggle(NotesToggleField, "notes");
         _questItemsToggle = ResolveSingleToggle(QuestItemsToggleField, "quest items");
-        _tabsMode = _workspace.EnableTaskMapTabs() && !_raidInProgressOnly;
-        if (_tabsMode)
-        {
-            // Coexist: leave every native selector in place and add our own beside them, so the
-            // vanilla task list keeps working and the graph is opt-in per visit.
-            _tabStrip = NativeTaskTabStrip.Create(
-                defaultToggle,
-                new[] { ClientLocale.Text("tabs.taskMap"), ClientLocale.Text("tabs.coopTasks") },
-                Log);
-        }
+        HideNativeControl(DefaultToggleField);
+        HideNativeControl(DailyToggleField);
+        HideNativeControl(NotesToggleField);
+        HideNativeControl(QuestItemsToggleField);
+        ClearNativeOverlays();
 
-        if (_tabStrip is null)
-        {
-            _tabsMode = false;
-            HideNativeControl(DefaultToggleField);
-            HideNativeControl(DailyToggleField);
-            HideNativeControl(NotesToggleField);
-            HideNativeControl(QuestItemsToggleField);
-            ClearNativeOverlays();
-
-            BuildGraphOnFullSurface(null, false);
-            _graphBuilt = true;
-            HideNativeTasksWorkspace();
-            _visible = true;
-        }
-        else
-        {
-            _tabStrip.SelectionChanged += OnTabSelectionChanged;
-            // Co-op comparison needs a server route that does not exist yet, so the tab is
-            // present but inert rather than silently doing nothing when clicked.
-            _tabStrip.SetInteractable(CoopTabIndex, false);
-            _visible = false;
-        }
-
+        BuildGraphOnFullSurface(null, false);
+        HideNativeTasksWorkspace();
         _mounted = true;
+        _visible = true;
         SubscribeInventoryUpdates();
         QuestMapDebugLog.Info(Log,
             "QUESTMAP_M06_MOUNT " +
@@ -465,12 +437,6 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _questItemsWarningCount = null;
         _questDescriptionButtonImage = null;
         _questDescriptionButton = null;
-        if (_tabStrip is not null)
-        {
-            _tabStrip.SelectionChanged -= OnTabSelectionChanged;
-            _tabStrip.Dispose();
-            _tabStrip = null;
-        }
         RestoreNativeSidePanelLayout();
         foreach (var ownedRoot in _screen == null
                      ? Array.Empty<RectTransform>()
@@ -1736,77 +1702,6 @@ internal sealed class GlobalTasksScreenController : IDisposable
         if (!_inventoryUpdatesSubscribed) return;
         InventoryController.OnProfileUpdate -= OnInventoryProfileUpdate;
         _inventoryUpdatesSubscribed = false;
-    }
-
-    private const int TaskMapTabIndex = 0;
-    private const int CoopTabIndex = 1;
-
-    /// <summary>
-    /// Switches between the game's task list and the quest map. Index -1 means a vanilla tab
-    /// took the selection back, because the shared ToggleGroup switched ours off.
-    /// </summary>
-    private void OnTabSelectionChanged(int index)
-    {
-        if (_disposed || !_mounted) return;
-        try
-        {
-            if (index == TaskMapTabIndex) ShowGraphSurface();
-            else HideGraphSurface();
-            QuestMapDebugLog.Info(Log,
-                $"QUESTMAP_TABS_SELECT screen={_screen.GetInstanceID()}; index={index}; graphBuilt={_graphBuilt}; visible={_visible}");
-        }
-        catch (Exception exception)
-        {
-            Log.LogError($"QUESTMAP_TABS_ERROR screen={_screen.GetInstanceID()}; index={index}; {exception}");
-            // Leave the player on a working vanilla screen rather than a broken one.
-            HideGraphSurface();
-        }
-    }
-
-    private void ShowGraphSurface()
-    {
-        if (!_graphBuilt)
-        {
-            ClearNativeOverlays();
-            BuildGraphOnFullSurface(null, false);
-            _graphBuilt = true;
-        }
-
-        SoftHideNativeTasksWorkspace();
-        if (_graphView is not null)
-        {
-            _graphView.Root.gameObject.SetActive(true);
-            ConfigureNativeSidePanels();
-            PlaceGraphBehindNativeSidePanels();
-            if (_selectedQuestId is not null) ShowSelectedQuestDetails();
-        }
-        _visible = true;
-    }
-
-    private void HideGraphSurface()
-    {
-        if (_graphView?.Root != null) _graphView.Root.gameObject.SetActive(false);
-        RestoreNativeTasksWorkspace();
-        _visible = false;
-    }
-
-    /// <summary>
-    /// Hides the native task list REVERSIBLY. Unlike <see cref="HideNativeTasksWorkspace"/> this
-    /// never calls <c>TasksPanel.Close()</c>: closing it would need EFT's own Show arguments to
-    /// reopen, which we do not hold, so a tab could switch away from vanilla but never back.
-    /// </summary>
-    private void SoftHideNativeTasksWorkspace()
-    {
-        if (_tasksPanel is not null) _tasksPanel.gameObject.SetActive(false);
-        _tasksDescription?.SetActive(false);
-        _screenTooltip?.Close();
-        _tasksTooltip?.Close();
-    }
-
-    private void RestoreNativeTasksWorkspace()
-    {
-        if (_tasksPanel is not null) _tasksPanel.gameObject.SetActive(_tasksPanelWasActive);
-        _tasksDescription?.SetActive(_tasksDescriptionWasActive);
     }
 
     private void HideNativeTasksWorkspace()

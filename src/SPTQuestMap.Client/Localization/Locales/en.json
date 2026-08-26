@@ -218,6 +218,4 @@
   "tooltip.questItemsEmpty": "No quest items are currently carried.",
   "tooltip.showDescriptionPane": "Show the selected quest description.",
   "tooltip.hideDescriptionPane": "Hide the selected quest description.",
-  "tabs.taskMap": "Task Map",
-  "tabs.coopTasks": "Coop Tasks",
 }
