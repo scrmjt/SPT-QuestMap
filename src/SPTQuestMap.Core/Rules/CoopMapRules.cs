@@ -11,6 +11,13 @@ public sealed record CoopMapQuestFact(string ProfileId, string QuestId, string M
 public sealed record CoopProfileCount(string ProfileId, int Count);
 
 /// <summary>
+/// Quests on a map that ONLY this profile still needs. Everyone else either finished them or
+/// cannot reach them yet - the ids are returned so the caller can measure which, against the
+/// real quest graph.
+/// </summary>
+public sealed record CoopUniqueQuests(string ProfileId, IReadOnlyList<string> QuestIds);
+
+/// <summary>
 /// A map, what each profile still has to do there, and how much of it they would all be
 /// closing out on the same raid.
 /// </summary>
@@ -22,6 +29,9 @@ public sealed record CoopMapRow(
 {
     /// <summary>Distinct quests anyone in the group still needs here.</summary>
     public int AnyProfile { get; init; }
+
+    /// <summary>Per profile, the quests here that nobody else in the pool still needs.</summary>
+    public IReadOnlyList<CoopUniqueQuests> UniqueToProfile { get; init; } = Array.Empty<CoopUniqueQuests>();
 }
 
 /// <summary>
@@ -77,9 +87,27 @@ public static class CoopMapRules
                     .Distinct(StringComparer.Ordinal)
                     .Count() == profileIds.Count);
 
+            var owners = distinct
+                .GroupBy(fact => fact.QuestId, StringComparer.Ordinal)
+                .ToDictionary(
+                    questGroup => questGroup.Key,
+                    questGroup => questGroup.Select(fact => fact.ProfileId).Distinct(StringComparer.Ordinal).ToArray(),
+                    StringComparer.Ordinal);
+
+            var unique = profileIds
+                .Select(profileId => new CoopUniqueQuests(
+                    profileId,
+                    owners
+                        .Where(pair => pair.Value.Length == 1 && string.Equals(pair.Value[0], profileId, StringComparison.Ordinal))
+                        .Select(pair => pair.Key)
+                        .OrderBy(questId => questId, StringComparer.Ordinal)
+                        .ToArray()))
+                .ToArray();
+
             rows.Add(new CoopMapRow(group.Key, distinct[0].MapName, perProfile, sharedByAll)
             {
-                AnyProfile = distinct.Select(fact => fact.QuestId).Distinct(StringComparer.Ordinal).Count(),
+                AnyProfile = owners.Count,
+                UniqueToProfile = unique,
             });
         }
 

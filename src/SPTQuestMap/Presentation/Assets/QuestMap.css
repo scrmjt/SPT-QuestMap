@@ -240,6 +240,9 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 .coop-table tbody tr:nth-child(even) { background: rgba(255,255,255,.025); }
 .coop-table tbody tr.has-shared th { color: #f0e6bf; }
 .coop-table td.zero { color: #5f665a; }
+/* Worst-case chain distance for the quests only this player can do here. */
+.coop-behind { margin-left: .18rem; color: #c9884f; font-size: .54rem; font-weight: 700; }
+.coop-table td.zero .coop-behind { color: #8a6440; }
 .coop-shared-col { border-left: 1px solid #353a34; color: #d8bd5c; font-weight: 800; }
 .coop-footnote { margin: .45rem .1rem 0; color: #7d8471; font-size: .58rem; line-height: 1.4; }
 

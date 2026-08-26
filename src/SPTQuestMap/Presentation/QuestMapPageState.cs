@@ -30,6 +30,10 @@ public sealed class QuestMapPageState
     // series view, so it must not be recomputed on each filter change.
     private Dictionary<string, QuestMapReferenceDto[]> _nodeMaps = new(StringComparer.Ordinal);
 
+    /// <summary>Quest id to the quests it depends on, for chain-distance walks.</summary>
+    private IReadOnlyDictionary<string, IReadOnlyList<string>> _prerequisiteIds =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
     // Catch-up inputs that depend only on the loaded topology/profiles, not on the
     // map filter. Cached so changing the filter re-ranks trader gaps without
     // recomputing the quest-graph depths or the shared-map breakdown every time.
@@ -148,6 +152,36 @@ public sealed class QuestMapPageState
         CoopMapRows = CoopMapRules.BuildRows(facts, PoolProfiles.Select(profile => profile.ProfileId).ToArray());
     }
 
+    /// <summary>
+    /// For the quests only <paramref name="profileId"/> still needs on a map, how far each
+    /// other pooled profile is from being able to join in.
+    ///
+    /// A quest is unique to one player for one of two reasons: everybody else finished it, or
+    /// they cannot reach it yet. Only the second is reported — someone who is already past a
+    /// quest is not "behind" on it, and counting them would invert the meaning.
+    /// </summary>
+    public IReadOnlyList<CoopBehindDto> CoopBehind(CoopMapRow row, string profileId)
+    {
+        var unique = row.UniqueToProfile.FirstOrDefault(entry => entry.ProfileId == profileId);
+        if (unique is null || unique.QuestIds.Count == 0 || Topology is null) return [];
+
+        var results = new List<CoopBehindDto>();
+        foreach (var other in PoolProfiles.Where(profile => profile.ProfileId != profileId))
+        {
+            var completed = new HashSet<string>(
+                other.Quests.Where(quest => quest.DisplayState == "Completed").Select(quest => quest.QuestId),
+                StringComparer.Ordinal);
+            var (furthest, count) = ChainDistanceRules.FurthestDistance(unique.QuestIds, _prerequisiteIds, completed);
+            if (count == 0) continue;
+            results.Add(new CoopBehindDto(other.ProfileId, PoolProfileLabel(other.ProfileId), furthest, count));
+        }
+
+        return results
+            .OrderByDescending(entry => entry.Furthest)
+            .ThenBy(entry => entry.Label, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
     /// <summary>Display name for a pooled profile, for column headers.</summary>
     public string PoolProfileLabel(string profileId)
     {
@@ -264,6 +298,12 @@ public sealed class QuestMapPageState
         // A restored filter can name a map the loaded profiles have no quests on. Drop
         // it rather than filtering everything away against an unselectable option.
         PruneUnselectableMapFilter();
+        _prerequisiteIds = topology.Edges
+            .GroupBy(edge => edge.TargetId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group.Select(edge => edge.SourceId).Distinct(StringComparer.Ordinal).ToArray(),
+                StringComparer.Ordinal);
         BuildComparisons();
         RebuildCatchUpModel();
         BuildCoopMapRows();
@@ -1181,6 +1221,9 @@ public sealed record QuestGraphView(string? ProfileId, string? ComparisonProfile
 public sealed record QuestGraphSnapshot(QuestTopologyDto Topology, ProfileStateDto? Profile, ProfileStateDto? ComparisonProfile, QuestGraphView View);
 /// <summary>Quests still needing a raid on one location, per profile and shared.</summary>
 public sealed record MapQuestCounts(int Primary, int Comparison, int Shared);
+
+/// <summary>How far one pooled profile is from quests only another of them can currently do.</summary>
+public sealed record CoopBehindDto(string ProfileId, string Label, int Furthest, int Count);
 
 /// <summary>One kind of thing a quest asks for, and how much of it.</summary>
 public sealed record ObjectiveMixEntry(string Kind, int Amount);

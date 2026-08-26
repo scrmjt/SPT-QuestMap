@@ -109,6 +109,24 @@ public sealed class CoopMapRulesTests
     }
 
     [Test]
+    public void BuildRows_ReportsWhichQuestsOnlyOneProfileStillNeeds()
+    {
+        var rows = CoopMapRules.BuildRows(
+        [
+            Fact("regdab", "shared"), Fact("woulf", "shared"),
+            Fact("regdab", "onlyRegdab"),
+            Fact("woulf", "onlyWoulf"),
+        ], ["regdab", "woulf"]);
+
+        var unique = rows[0].UniqueToProfile;
+        Assert.Multiple(() =>
+        {
+            Assert.That(unique.Single(entry => entry.ProfileId == "regdab").QuestIds, Is.EqualTo(new[] { "onlyRegdab" }));
+            Assert.That(unique.Single(entry => entry.ProfileId == "woulf").QuestIds, Is.EqualTo(new[] { "onlyWoulf" }));
+        });
+    }
+
+    [Test]
     public void BuildRows_WithNoProfilesSelected_ReturnsNothing()
     {
         Assert.That(CoopMapRules.BuildRows([Fact("a", "q1")], []), Is.Empty);

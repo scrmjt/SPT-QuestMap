@@ -223,5 +223,8 @@
   "coop.noWork": "Keine offenen Raid-Quests für diese Spieler.",
   "coop.shared": "Alle",
   "coop.shared.detail": "Quests, für die jeder gewählte Spieler hier noch einen Raid braucht",
-  "coop.footnote": "Gezählt werden Quests, die noch einen Raid brauchen. Quests ohne Ort werden ausgeschlossen."
+  "coop.footnote": "Gezählt werden Quests, die noch einen Raid brauchen. Quests ohne Ort werden ausgeschlossen.",
+  "coop.cell.count": "{profile} braucht auf {map} noch {count} Raid-Quest(s)",
+  "coop.cell.behind": "{profile} ist bis zu {steps} Aufgabe(n) von {count} davon entfernt",
+  "coop.behind.legend": "+N = wie viele Aufgaben der am weitesten zurückliegende Spieler noch braucht, um bei den Quests mitzumachen, die hier nur dieser Spieler machen kann."
 }
