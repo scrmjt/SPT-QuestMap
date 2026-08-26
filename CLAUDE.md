@@ -185,6 +185,23 @@ Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `Quest
 passed its unit tests and read as correct; it only surfaced when run against two real profiles.
 For anything ranking/filtering real quest data, check the live output before calling it done.
 
+## In-game (BepInEx) client
+
+See **`docs/bepinex-client-notes.md`** for the worked-out notes: how the plugin gets its data
+from the server, why compare mode / catch-up is feasible in-game and what it would cost, the
+root cause of the vanilla-screen flash, and the feasibility of keeping the vanilla list as a
+tab. All of it is referenced by file and line so it can be re-checked after a refactor.
+
+Two headlines from it:
+
+- **The plugin never reads profiles itself.** It asks the server over HTTP
+  (`/questmap/client/*`), and the server already enumerates every profile via SPT's
+  `SaveServer.GetProfiles()`. So multi-profile features are blocked on Unity UI work, not on
+  architecture.
+- **Anything both sides exchange must be defined in Core.** The DTOs in
+  `src/SPTQuestMap/Models/QuestMapDtos.cs` are net9.0 and invisible to the plugin; the shared
+  contract is `src/SPTQuestMap.Core/Models/QuestGraphModels.cs`.
+
 ## Not done / open
 
 - The map filter + chain-progress work is **uncommitted** working-tree changes on
