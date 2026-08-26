@@ -86,19 +86,19 @@ button.primary { border-color: #84764b; background: #373321; }
    vertically so the graph gets the whole height of the window. */
 .topbar { z-index: 5; display: flex; flex-direction: column; width: clamp(13.5rem, 18vw, 20rem); height: 100%; overflow-y: auto; overflow-x: visible; border-right: 1px solid var(--line); background: rgba(15, 18, 16, .97); scrollbar-width: thin; }
 .primary-row, .filterbar { width: 100%; }
-.primary-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .4rem .5rem; border-bottom: 1px solid #292e29; }
-.brand { flex: 1 1 100%; padding: 0 0 .3rem; border-right: 0; }
+.primary-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .5rem; border-bottom: 1px solid #292e29; }
+.brand { flex: 1 1 100%; padding: 0; border-right: 0; }
 .eyebrow { display: block; margin-bottom: .15rem; color: var(--gold); font-size: .65rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
+h1 { margin: 0; font: 700 1.2rem/1.1 Georgia, serif; letter-spacing: -.02em; }
 .identity-controls { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: .4rem; min-width: 0; }
-.refresh-button { align-self: center; width: 42px; height: 52px; padding: 0; font-size: 1.35rem; line-height: 1; }
-.compare-toggle, .swap-profiles { align-self: center; width: 38px; height: 52px; padding: 0; font-size: 1.05rem; }
+.refresh-button { align-self: center; width: var(--control-h); height: var(--control-h); padding: 0; font-size: 1rem; line-height: 1; }
+.compare-toggle, .swap-profiles { align-self: center; width: var(--control-h); height: var(--control-h); padding: 0; font-size: .95rem; }
 .compare-toggle.active { border-color: #dfc15e; background: #5b4b1e; color: #fff4c8; box-shadow: inset 0 -3px #e1c45e; }
-.swap-profiles { width: 30px; border-color: transparent; background: transparent; color: #b9b49f; }
+.swap-profiles { align-self: center; justify-self: center; margin: 0 auto; border-color: transparent; background: transparent; color: #b9b49f; }
 .field { display: grid; gap: .12rem; color: var(--muted); font-size: .6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .field select, .field input { height: var(--control-h); padding: 0 var(--control-pad); color: #e9e5da; font-size: .82rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
 .profile-field { position: relative; display: block; width: 100%; min-width: 0; height: 38px; }
-.profile-select-trigger { display: block; width: 100%; height: 52px; min-height: 52px; max-height: 52px; padding: 0; overflow: hidden; border-color: #464b43; border-radius: 5px; background: linear-gradient(110deg,#242923,#1b201c); text-align: left; }
+.profile-select-trigger { display: block; width: 100%; height: 100%; padding: 0; overflow: hidden; border-color: #464b43; border-radius: 5px; background: linear-gradient(110deg,#242923,#1b201c); text-align: left; }
 .profile-select-trigger:hover:not(:disabled) { border-color: #8c805b; background: linear-gradient(110deg,#2a3028,#20251f); }
 .profile-select-trigger:focus-visible, .profile-field.open .profile-select-trigger { border-color: #c3ab5a; outline: none; box-shadow: 0 0 0 2px #74662e66; }
 .profile-select-face { position: relative; display: grid; height: 100%; min-height: 0; grid-template-columns: minmax(0,1fr) 14px; align-items: center; gap: .35rem; padding: 0 var(--control-pad); overflow: hidden; isolation: isolate; pointer-events: none; }
@@ -144,13 +144,15 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 /* overflow must stay visible: the filter dropdown panels are absolutely positioned
    children and 'hidden' clipped them to the bar's 78px. The clipping existed for the
    horizontally scrolling trader row, which the dropdowns replaced. */
-.filterbar { display: flex; align-items: flex-start; gap: .5rem; min-height: 0; padding: .4rem .5rem; overflow: visible; }
-.filter-tools { display: grid; flex: 1 1 auto; grid-template-rows: 32px 34px auto; gap: .35rem; align-content: start; }
+.filterbar { display: flex; align-items: flex-start; gap: .5rem; min-height: 0; padding: .5rem; overflow: visible; }
+.filter-tools { display: grid; flex: 1 1 auto; grid-template-rows: auto auto auto; gap: .4rem; align-content: start; }
 .filter-toggles { display: grid; grid-template-columns: 34px 34px 34px minmax(0,1fr); gap: .3rem; }
 .filter-toggle { height: var(--control-h); padding: 0 .3rem; color: #aaaDA4; font-size: 1rem; font-weight: 800; }
 .filter-toggle.active { border-color: #dfc15e; background: #5b4b1e; color: #fff4c8; box-shadow: inset 0 -3px #e1c45e, 0 0 0 1px #76652f; }
 .repeatable-toggle svg { display: block; width: 17px; height: 17px; margin: auto; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-.level-toggle { font-size: .72rem; letter-spacing: .02em; white-space: nowrap; }
+.level-toggle { position: relative; padding: 0; font-size: .68rem; letter-spacing: .02em; white-space: nowrap; }
+.level-toggle select { width: 100%; height: 100%; padding: 0 1.2rem 0 var(--control-pad); appearance: none; -webkit-appearance: none; border: 0; background: transparent; color: inherit; font: inherit; }
+.level-toggle::after { position: absolute; top: 50%; right: var(--control-pad); content: "▾"; transform: translateY(-50%); color: var(--muted); font-size: var(--chevron-size); line-height: 1; pointer-events: none; }
 .search-field, .search-field input { width: 100%; }
 .filter-separator { flex: 0 0 1px; background: #363b35; }
 .trader-options { display: flex; flex: 1 1 auto; align-items: center; gap: .22rem; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
@@ -187,7 +189,7 @@ h1 { margin: 0; font: 700 1.55rem/1 Georgia, serif; letter-spacing: -.02em; }
 
 /* The comparison chips moved out of their own full-width bar and into the left filter
    panel, so they wrap instead of scrolling horizontally. */
-.comparison-filters { display: flex; flex-wrap: wrap; gap: .25rem; padding-top: .1rem; }
+.comparison-filters { display: flex; flex-wrap: wrap; gap: .25rem; }
 .comparison-filters .comparison-filter { height: 24px; font-size: .62rem; }
 .filter-dropdown-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .filter-dropdown-badges { display: inline-flex; flex: 0 0 auto; gap: .2rem; margin-left: .3rem; }
