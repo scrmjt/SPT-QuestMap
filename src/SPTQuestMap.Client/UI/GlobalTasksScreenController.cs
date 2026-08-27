@@ -953,6 +953,16 @@ internal sealed class GlobalTasksScreenController : IDisposable
         const float width = 116;
         const float height = 32;
         const float gap = 6;
+        var nodeLocationIds = relevantNodes
+            .Select(node => new HashSet<string>(
+                NodeTaskLocations(node).Select(map => map.Id), StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        int CountFor(IReadOnlyCollection<string> ids)
+        {
+            var wanted = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+            return nodeLocationIds.Count(set => set.Overlaps(wanted));
+        }
+
         var nextIndex = 0;
         AddMapResetChoice(nextIndex++);
         AddSpecialMapChoice(noLocation);
@@ -962,14 +972,14 @@ internal sealed class GlobalTasksScreenController : IDisposable
         {
             var location = locations[index];
             AddMapChoice(location.Name, location.Id, location.BannerImageUrl ?? FallbackLocationBannerUrl, location.Aliases, nextIndex + index,
-                location.Aliases.Any(_inProgressLocationIds.Contains));
+                location.Aliases.Any(_inProgressLocationIds.Contains), CountFor(location.Aliases));
         }
 
         void AddSpecialMapChoice(QuestMapReference? map)
         {
             if (map is null) return;
             AddMapChoice(map.Name, map.Id, map.BannerImageUrl, [map.Id], nextIndex,
-                _inProgressLocationIds.Contains(map.Id));
+                _inProgressLocationIds.Contains(map.Id), CountFor([map.Id]));
             nextIndex++;
         }
 
@@ -989,7 +999,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
                 _raidInProgressOnly ? "tooltip.resetRaidLocations" : "tooltip.resetAllLocations"));
         }
 
-        void AddMapChoice(string label, string? id, string? bannerUrl, string[] aliases, int index, bool selected)
+        void AddMapChoice(string label, string? id, string? bannerUrl, string[] aliases, int index, bool selected, int count)
         {
             var root = UnityUiFactory.CreateRect($"Map-{id}", header);
             root.anchorMin = root.anchorMax = root.pivot = new Vector2(0, 1);
@@ -1034,6 +1044,17 @@ internal sealed class GlobalTasksScreenController : IDisposable
             var outline = root.gameObject.AddComponent<Outline>();
             outline.effectColor = selected ? QuestGraphPalette.Selected : QuestGraphPalette.Border;
             outline.effectDistance = selected ? new Vector2(2, -2) : Vector2.one;
+            if (count > 0)
+            {
+                var badge = UnityUiFactory.CreateRect("Count", root);
+                badge.anchorMin = badge.anchorMax = badge.pivot = new Vector2(1, 1);
+                badge.anchoredPosition = new Vector2(-3, -3);
+                badge.sizeDelta = new Vector2(count > 99 ? 24 : 18, 15);
+                badge.gameObject.AddComponent<Image>().color = new Color(0.05f, 0.05f, 0.05f, 0.82f);
+                var countText = UnityUiFactory.AddText(badge.gameObject, count > 99 ? "99+" : count.ToString(),
+                    9, TextAlignmentOptions.Center, QuestGraphPalette.Selected);
+                countText.fontStyle = FontStyles.Bold;
+            }
             if (id is not null)
             {
                 _inProgressMapVisuals[id] = new MapFilterVisual(background, banner, shadeImage, outline);

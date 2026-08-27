@@ -1194,7 +1194,7 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
             var definition = displayedObjectives[index];
             progressById.TryGetValue(definition.Id, out var progress);
             var percent = ObjectivePercent(progress);
-            var taskHeight = percent.HasValue ? ProgressTaskRowHeight : CompactTaskRowHeight;
+            var taskHeight = CompactTaskRowHeight;
             var task = UnityUiFactory.CreateRect($"Task-{definition.Id}", cell);
             task.anchorMin = new Vector2(0, 1);
             task.anchorMax = new Vector2(1, 1);
@@ -1215,17 +1215,22 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
                 && progress?.Complete != true
                 && definition.ContributesToProgress;
             var actionWidth = handoverCandidate ? 70f : 0f;
+            // Right-anchored and a fixed width, so it sits inline with the text on one line
+            // and - unlike the old bottom-anchored full-width bar - never needs to shift when
+            // an action button appears on the left; only the text's right edge has to yield.
+            const float inlineBarWidth = 56f;
+            const float inlineBarGap = 8f;
+            var textRightInset = percent.HasValue ? inlineBarWidth + inlineBarGap + 8f : 8f;
             var textRect = UnityUiFactory.CreateRect("Text", task);
             var nestedIndent = definition.ContributesToProgress ? 0f : 12f;
-            UnityUiFactory.Stretch(textRect, 10 + actionWidth + nestedIndent, 8, 0, percent.HasValue ? 9 : 0);
+            UnityUiFactory.Stretch(textRect, 10 + actionWidth + nestedIndent, textRightInset, 0, 0);
             var text = UnityUiFactory.AddText(textRect.gameObject, value + definition.Text + suffix, TaskFontSize,
                 TextAlignmentOptions.MidlineLeft, progress?.Complete == true ? QuestGraphPalette.Completed : Color.white);
             text.enableWordWrapping = false;
             if (percent.HasValue)
-                AddProgressBar(task, percent.Value / 100d, 10, 3, progress?.Complete == true
+                AddInlineProgressBar(task, percent.Value / 100d, inlineBarWidth, 8f, progress?.Complete == true
                     ? QuestGraphPalette.Status(QuestMapDisplayStateKind.ReadyToFinish)
-                    : QuestGraphPalette.Status(QuestMapDisplayStateKind.InProgress), actionWidth);
-            var progressTrack = task.Find("ProgressTrack") as RectTransform;
+                    : QuestGraphPalette.Status(QuestMapDisplayStateKind.InProgress));
             RectTransform? actionRect = null;
             Button? actionButton = null;
             TMP_Text? actionText = null;
@@ -1271,8 +1276,6 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
                     {
                         var left = occupied ? 80f : 10f;
                         textRect.offsetMin = new Vector2(left, textRect.offsetMin.y);
-                        if (progressTrack != null)
-                            progressTrack.offsetMin = new Vector2(left, progressTrack.offsetMin.y);
                     });
             }
 
@@ -1292,8 +1295,6 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
                             {
                                 actionRect.gameObject.SetActive(false);
                                 textRect.offsetMin = new Vector2(10, textRect.offsetMin.y);
-                                if (progressTrack != null)
-                                    progressTrack.offsetMin = new Vector2(10, progressTrack.offsetMin.y);
                             }
                             return;
                         }
@@ -1459,8 +1460,9 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal)
         ?? new Dictionary<string, QuestObjectiveProgress>(StringComparer.Ordinal);
 
-    private float TaskVisualHeight(QuestObjectiveProgress? progress) =>
-        ObjectivePercent(progress).HasValue ? ProgressTaskRowHeight : CompactTaskRowHeight;
+    // Every row is the compact height now: the progress bar sits inline beside the
+    // objective text instead of stacked underneath it, so it never needs extra height.
+    private float TaskVisualHeight(QuestObjectiveProgress? progress) => CompactTaskRowHeight;
 
     private static void AddQuestRouteStrips(RectTransform parent, bool collectorRoute, bool lightkeeperRoute)
     {
@@ -1649,6 +1651,27 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
             fitter.Bind(parent, sprite.rect.width / sprite.rect.height);
             imageRoot.gameObject.SetActive(true);
         });
+    }
+
+    /// <summary>
+    /// A short bar anchored to the row's right edge, vertically centered - unlike
+    /// <see cref="AddProgressBar"/>, which spans the row's full width along its bottom edge.
+    /// Used for the per-objective row so the bar sits beside the objective text on one line
+    /// instead of stacking under it, which is what let the row shrink to a single line.
+    /// </summary>
+    private static void AddInlineProgressBar(RectTransform parent, double ratio, float width, float rightInset, Color color)
+    {
+        var track = UnityUiFactory.CreateRect("ProgressTrack", parent);
+        track.anchorMin = track.anchorMax = new Vector2(1, 0.5f);
+        track.pivot = new Vector2(1, 0.5f);
+        track.sizeDelta = new Vector2(width, 5f);
+        track.anchoredPosition = new Vector2(-rightInset, 0);
+        track.gameObject.AddComponent<Image>().color = new Color(0.16f, 0.17f, 0.17f, 1);
+        var fill = UnityUiFactory.CreateRect("Fill", track);
+        fill.anchorMin = Vector2.zero;
+        fill.anchorMax = new Vector2((float)Math.Clamp(ratio, 0d, 1d), 1);
+        fill.offsetMin = fill.offsetMax = Vector2.zero;
+        fill.gameObject.AddComponent<Image>().color = color;
     }
 
     private static void AddProgressBar(

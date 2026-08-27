@@ -29,6 +29,12 @@ internal sealed class QuestScreenCoordinator : IDisposable
     private PendingTraderScreen? _pendingTraderScreen;
     private PendingGlobalScreen? _pendingGlobalScreen;
     private Coroutine? _globalMountCoroutine;
+    private Coroutine? _veilTimeoutCoroutine;
+    private CanvasGroup? _veiledGroup;
+    private bool _veilGroupWasAdded;
+    private float _veilPriorAlpha = 1f;
+    private bool _veilPriorInteractable = true;
+    private bool _veilPriorBlocksRaycasts = true;
     private bool _disposed;
 
     public QuestScreenCoordinator(
@@ -113,6 +119,7 @@ internal sealed class QuestScreenCoordinator : IDisposable
                 cached.Dispose();
                 if (!_configuration.EnableGlobalTasksGraph.Value)
                 {
+                    RevealVeil();
                     QuestMapDebugLog.Info(_log, $"QUESTMAP_M06_STATE screen={screen.GetInstanceID()}; active=False; safelyDisabled=True; reason=feature disabled; vanillaRestored=True");
                     return;
                 }
@@ -129,6 +136,7 @@ internal sealed class QuestScreenCoordinator : IDisposable
                     try
                     {
                         var result = cached.Resume(inventoryController, questController, session, topology, layout, overlay);
+                        RevealVeil();
                         if (!InRaidQuestContext.TryCapture(out _)) _requestRefresh("global-screen-open", null);
                         QuestMapDebugLog.Info(_log, $"QUESTMAP_M06_STATE screen={screen.GetInstanceID()}; active=True; cached=True; result={result}");
                         return;
@@ -152,11 +160,75 @@ internal sealed class QuestScreenCoordinator : IDisposable
         {
             _pendingGlobalScreen = null;
             ReleaseInventoryMonitoringIfInactive();
+            RevealVeil();
             QuestMapDebugLog.Info(_log, $"QUESTMAP_M06_STATE screen={screen.GetInstanceID()}; active=False; safelyDisabled=True; reason=feature disabled; vanillaRestored=True");
             return;
         }
 
+        // The mount is deliberately deferred past a rendered frame (see
+        // MountPendingGlobalAfterVanillaLayout) so Unity finishes laying out the vanilla
+        // panel before ours is sized against it. Left alone, that frame paints the vanilla
+        // task list, which then gets replaced - the reported flicker. Veiling with alpha
+        // hides the pixels without touching layout: SetActive(false) would stop Unity from
+        // computing the very layout the coroutine is waiting for.
+        Veil(screen);
         _globalMountCoroutine = _coroutineOwner.StartCoroutine(MountPendingGlobalAfterVanillaLayout());
+        _veilTimeoutCoroutine = _coroutineOwner.StartCoroutine(RevealVeilAfterTimeout());
+    }
+
+    /// <summary>
+    /// Hides the screen's pixels without touching its layout, so the vanilla task list never
+    /// paints before this mod's content replaces it. Reuses an existing CanvasGroup if EFT
+    /// already has one there (which may be mid fade-in) rather than fighting it with a second.
+    /// </summary>
+    private void Veil(TasksScreen screen)
+    {
+        if (_veiledGroup is not null) return; // already veiled for a screen we have not revealed yet
+        var group = screen.GetComponent<CanvasGroup>();
+        _veilGroupWasAdded = group == null;
+        group ??= screen.gameObject.AddComponent<CanvasGroup>();
+        _veilPriorAlpha = group.alpha;
+        _veilPriorInteractable = group.interactable;
+        _veilPriorBlocksRaycasts = group.blocksRaycasts;
+        group.alpha = 0f;
+        group.interactable = false;
+        group.blocksRaycasts = false;
+        _veiledGroup = group;
+    }
+
+    private void RevealVeil()
+    {
+        if (_veilTimeoutCoroutine is not null)
+        {
+            _coroutineOwner.StopCoroutine(_veilTimeoutCoroutine);
+            _veilTimeoutCoroutine = null;
+        }
+
+        var group = _veiledGroup;
+        _veiledGroup = null;
+        if (group == null) return;
+        if (_veilGroupWasAdded)
+        {
+            UnityEngine.Object.Destroy(group);
+            return;
+        }
+
+        group.alpha = _veilPriorAlpha;
+        group.interactable = _veilPriorInteractable;
+        group.blocksRaycasts = _veilPriorBlocksRaycasts;
+    }
+
+    /// <summary>
+    /// The mount can be deferred indefinitely if topology has not loaded yet (see
+    /// TryMountPendingGlobalScreen's early return) - it is retried elsewhere once data
+    /// arrives, but an un-timed veil would risk a permanently blank screen if that retry
+    /// path is ever missed. A few seconds of vanilla flash beats that.
+    /// </summary>
+    private IEnumerator RevealVeilAfterTimeout()
+    {
+        yield return new WaitForSeconds(4f);
+        _veilTimeoutCoroutine = null;
+        RevealVeil();
     }
 
     public void CloseGlobalTasksScreen(TasksScreen screen)
@@ -168,6 +240,7 @@ internal sealed class QuestScreenCoordinator : IDisposable
             _coroutineOwner.StopCoroutine(_globalMountCoroutine);
             _globalMountCoroutine = null;
         }
+        RevealVeil();
 
         if (_globalControllers.TryGetValue(screen, out var controller)) controller.Suspend();
         ReleaseInventoryMonitoringIfInactive();
@@ -223,6 +296,9 @@ internal sealed class QuestScreenCoordinator : IDisposable
         _disposed = true;
         if (_globalMountCoroutine is not null) _coroutineOwner.StopCoroutine(_globalMountCoroutine);
         _globalMountCoroutine = null;
+        if (_veilTimeoutCoroutine is not null) _coroutineOwner.StopCoroutine(_veilTimeoutCoroutine);
+        _veilTimeoutCoroutine = null;
+        RevealVeil();
         _pendingTraderScreen = null;
         _pendingGlobalScreen = null;
         foreach (var controller in _traderControllers.Values) controller.Dispose();
@@ -322,12 +398,14 @@ internal sealed class QuestScreenCoordinator : IDisposable
         {
             controller.Mount(topology, layout, overlay);
             _globalControllers[pending.Screen] = controller;
+            RevealVeil();
             QuestMapDebugLog.Info(_log, $"QUESTMAP_M06_STATE screen={pending.Screen.GetInstanceID()}; active=True; safelyDisabled=False; vanillaRestored=False");
         }
         catch (Exception exception)
         {
             controller.Dispose();
             ReleaseInventoryMonitoringIfInactive();
+            RevealVeil();
             _log.LogError($"QUESTMAP_M06_ERROR screen={pending.Screen.GetInstanceID()}; {exception}");
             _log.LogWarning($"QUESTMAP_M06_STATE screen={pending.Screen.GetInstanceID()}; active=False; safelyDisabled=True; reason=graph initialization failed; vanillaRestored=True");
         }
@@ -339,6 +417,7 @@ internal sealed class QuestScreenCoordinator : IDisposable
         if (pending is null) return;
         _pendingGlobalScreen = null;
         ReleaseInventoryMonitoringIfInactive();
+        RevealVeil();
         _log.LogError($"QUESTMAP_M06_ERROR screen={pending.Screen.GetInstanceID()}; reason={reason}; {exception}");
         _log.LogWarning($"QUESTMAP_M06_STATE screen={pending.Screen.GetInstanceID()}; active=False; safelyDisabled=True; reason={reason}; vanillaRestored=True");
     }
