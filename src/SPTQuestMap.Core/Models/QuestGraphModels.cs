@@ -349,6 +349,13 @@ public enum GlobalQuestGraphMode
 {
     InProgress,
     Full,
+    // Coop modes never build a quest graph or run BuildProjection at all - they render a
+    // simple list instead, comparing the local profile against teammates fetched from the
+    // server. They only ever reach the two binary (InProgress vs Full) checks scattered
+    // through the graph-building code by falling through to the Full-shaped default, which
+    // is harmless since that code never actually runs for them.
+    CoopCatchUp,
+    CoopMapSuggestions,
 }
 
 public enum QuestRouteFilter
