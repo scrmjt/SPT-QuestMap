@@ -393,7 +393,8 @@ internal sealed class QuestScreenCoordinator : IDisposable
             workspace,
             _assetCache,
             _tracking,
-            _reconcileQuestAction);
+            _reconcileQuestAction,
+            _coroutineOwner);
         try
         {
             controller.Mount(topology, layout, overlay);

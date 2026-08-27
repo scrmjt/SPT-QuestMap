@@ -208,14 +208,71 @@ selectors.
 | --- | --- |
 | `CoopMapRules` — per-map, per-profile and all-shared counts | **Done**, 8 tests |
 | `PoolCatchUpRules` — per-chain leader/laggard, steps-behind, maps by summed steps-behind | **Done**, 7 tests |
-| Both views in the Blazor UI | Not started |
-| Server compare route (Core-shaped payload) | Not started — **blocks the in-game versions** |
-| Unity views | Not started |
+| Both views in the Blazor UI | **Done** |
+| Server compare routes (`/coop/profiles`, `/coop/state/{ids}`) | **Done**, verified live with curl against real profiles |
+| Unity views ("Coop Catch Up", "Coop Maps" header buttons) | **Done, built and deployed — never run in Tarkov** |
 
 `CoopMapRules` deliberately treats a quest as shared only when **every** selected profile still
 needs it; a profile that cannot take the quest at all excludes it, because the group cannot
 close it out together. Guarded by
 `CoopMapRulesTests.BuildRows_ExcludesQuestsAProfileCannotTakeFromTheSharedCount`.
+
+### 5b. What actually got built for the Unity side, and where it differs from the web app
+
+Two new header buttons, next to Tasks / Quest Map: **Coop Catch Up** and **Coop Maps**
+(`GlobalQuestGraphMode.CoopCatchUp` / `.CoopMapSuggestions`, `GlobalTasksScreenController`).
+Both render through a new shared widget, `CoopListView` - a plain scrolling list of titled
+sections, deliberately not the node-graph machinery `QuestGraphView`/`InProgressQuestTableView`
+use, since Coop content is a read-only summary with nothing to pan, zoom or select. A profile
+picker (`BuildCoopPicker`) sits above the list; the same selection feeds both views.
+
+**Coop modes never touch `BuildProjection`, `_graphView`, the trader strip, or the graph's own
+filter row.** This is what makes the four "not exhaustively switched" `_mode ==` sites from
+section 4's original risk list a non-issue: none of that code ever runs for a Coop mode,
+because `ShowMode` branches to `RebuildCoopView()` instead of `RebuildGraph()` before any of it
+is reached. The one site that genuinely needed a new branch was the Future/Finished/Level vs
+Repeatables/HideCompletedTasks row in `BuildGlobalChrome`, which was an `if (Full) {...} else
+{...}` that would otherwise have shown the InProgress-only buttons in Coop mode too.
+
+**Async fetches follow this codebase's own established discipline, not a direct `await`.**
+Every other async load in this project (`QuestMapDataRuntime.LoadAndOverlay`) starts a `Task`,
+then polls `task.IsCompleted` from a `StartCoroutine`-driven coroutine one frame at a time, so
+nothing that touches Unity UI is ever reached off the main thread. The two new fetches
+(`LoadCoopProfilesCoroutine`, `LoadCoopSnapshotsCoroutine`) do the same. This needed threading
+`QuestScreenCoordinator`'s existing `_coroutineOwner` MonoBehaviour into
+`GlobalTasksScreenController`'s constructor, since that controller had never previously run
+async work of its own.
+
+**"Chain Progress" is pairwise per teammate, looped; "Coop Maps" is genuinely N-way.** This
+mirrors the web app's own split: the web Catch-Up Planner's Chain Progress and per-player
+catch-up maps are pairwise (primary vs the one active comparison profile,
+`QuestSeriesRules`/an app-layer filter), while its separate Coop Map Helper is the N-way pool
+(`CoopMapRules`). Coop Catch Up loops the pairwise comparison once per selected teammate rather
+than forcing a pool concept onto something that is naturally two-sided.
+
+**Simplifications versus the web version, made deliberately for a first pass:**
+
+- No trader-chain-gap sub-feature (the "next quest per trader" list). Only named-series chain
+  progress and catch-up-by-map, which were the two examples asked for.
+- "Outstanding" for a teammate means "not completed", full stop - the server only ever tells
+  the client what another profile has *finished* (see section 2's minimality argument), not
+  whether an unfinished quest is available, in progress, or gated. The local player's own
+  richer state is still used for their own side of every comparison.
+- Rows are **not clickable**. Selecting a quest to jump to it on the graph would mean
+  switching `_mode` mid-click and reconciling that with the Coop surface's own lifecycle -
+  adjacent complexity to what section 4 was written to warn about, and out of scope for
+  read-only summary lists in a first pass.
+- The picker is a flat multi-select shared by both views; there is no separate "who am I
+  catching up to" vs "who is in my pool" distinction the way the web app's compare-pair and
+  N-profile pool are conceptually different pools. Simpler, and defensible for a first
+  version, but worth reconsidering if people want to compare against one teammate on Catch Up
+  while pooling a different, larger group on Maps.
+
+**Not yet verified in-game.** Every piece above compiles, the full solution builds with zero
+warnings, and the two server routes were proven live against real profile data with curl (see
+section 2). None of that proves the Unity layout looks right, that the picker chips are usable,
+or that switching between all four header tabs behaves - there is no way to check any of that
+without actually opening Tasks in Tarkov and looking.
 
 ## 4. Rules that must not be "tidied" into Core
 

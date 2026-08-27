@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using BepInEx.Logging;
 using EFT;
 using EFT.InventoryLogic;
@@ -83,6 +84,15 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private GlobalOverlayMode _overlayMode;
     private GlobalQuestGraphMode _mode = GlobalQuestGraphMode.InProgress;
     private bool _raidInProgressOnly;
+    private readonly NativeCoopDataSource _coopDataSource = new();
+    private CoopListView? _coopView;
+    private CoopProfileSummary[] _coopProfiles = [];
+    private bool _coopProfilesLoaded;
+    private readonly Dictionary<string, CoopProfileSnapshot> _coopSnapshotsByProfileId = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _coopSelectedProfileIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Toggle> _coopPickerToggles = new(StringComparer.Ordinal);
+    private bool _coopLoading;
+    private readonly MonoBehaviour _coroutineOwner;
     private string? _raidLocationId;
     private AbstractQuestControllerClass? _raidQuestController;
     private bool _showAllFuture;
@@ -115,13 +125,15 @@ internal sealed class GlobalTasksScreenController : IDisposable
         NativeQuestWorkspaceContext workspace,
         QuestAssetSpriteCache assetCache,
         QuestTrackingService tracking,
-        Action<string, QuestDetailsActionKind> requestQuestRefresh)
+        Action<string, QuestDetailsActionKind> requestQuestRefresh,
+        MonoBehaviour coroutineOwner)
     {
         _screen = screen;
         _workspace = workspace;
         _assetCache = assetCache;
         _tracking = tracking;
         _requestQuestRefresh = requestQuestRefresh;
+        _coroutineOwner = coroutineOwner;
     }
 
     private InventoryController InventoryController => _workspace.InventoryController;
@@ -428,6 +440,9 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _detailPane = null;
         _graphView?.Dispose();
         _graphView = null;
+        _coopView?.Dispose();
+        _coopView = null;
+        _coopPickerToggles.Clear();
         _selectionSummary = null;
         _selectionSummaryText = null;
         _notesButtonImage = null;
@@ -457,9 +472,9 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private void ShowMode(GlobalQuestGraphMode mode)
     {
         if (_disposed || !_mounted || _tasksPanel is null) return;
-        if (_raidInProgressOnly && mode == GlobalQuestGraphMode.Full)
+        if (_raidInProgressOnly && mode != GlobalQuestGraphMode.InProgress)
         {
-            QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_VIEW screen={_screen.GetInstanceID()}; view=Full; blocked=True; reason=in-raid-in-progress-only");
+            QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_VIEW screen={_screen.GetInstanceID()}; view={mode}; blocked=True; reason=in-raid-in-progress-only");
             return;
         }
         if (_mode != mode)
@@ -468,16 +483,350 @@ internal sealed class GlobalTasksScreenController : IDisposable
             _mode = mode;
             _focusQuestId = null;
             if (_mode == GlobalQuestGraphMode.InProgress) InitializeInProgressLocations();
-            RebuildGraph(false);
+            if (IsCoopMode(_mode)) RebuildCoopView(); else RebuildGraph(false);
         }
         ClearNativeOverlays();
         HideNativeTasksWorkspace();
-        if (_graphView is not null)
+        if (IsCoopMode(_mode))
+        {
+            _coopView?.Root.gameObject.SetActive(true);
+        }
+        else if (_graphView is not null)
         {
             _graphView.Root.gameObject.SetActive(true);
             if (CustomDetailsEnabled && _selectedQuestId is not null) ShowSelectedQuestDetails();
         }
         QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_VIEW screen={_screen.GetInstanceID()}; view={mode}; native=False");
+    }
+
+    private static bool IsCoopMode(GlobalQuestGraphMode mode) =>
+        mode is GlobalQuestGraphMode.CoopCatchUp or GlobalQuestGraphMode.CoopMapSuggestions;
+
+    /// <summary>
+    /// Builds the Coop surface the same way <see cref="RebuildGraph"/> builds the node graph:
+    /// one content view active at a time, fully rebuilt on every mode switch rather than kept
+    /// alive alongside the graph. The picker itself is preserved across data refreshes -
+    /// <see cref="RefreshCoopContent"/> is what repaints after a toggle or a fetch completes.
+    /// </summary>
+    private void RebuildCoopView()
+    {
+        if (_tasksPanel is null || _disposed) return;
+        try
+        {
+            PersistCurrentState();
+            _detailPane?.Dispose();
+            _detailPane = null;
+            _graphView?.Dispose();
+            _graphView = null;
+            _coopView?.Dispose();
+            _coopView = null;
+            _coopPickerToggles.Clear();
+
+            var mount = CreateFullSurfaceMount();
+            try
+            {
+                var title = _mode == GlobalQuestGraphMode.CoopCatchUp
+                    ? ClientLocale.Text("label.coopCatchUp")
+                    : ClientLocale.Text("label.coopMapSuggestions");
+                _coopView = CoopListView.Create(mount, title, Log);
+                BuildCoopPicker(_coopView.PickerHost);
+            }
+            finally
+            {
+                mount.gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(mount.gameObject);
+            }
+
+            HideNativeTasksWorkspace();
+            RefreshCoopContent();
+            if (!_coopProfilesLoaded && !_coopLoading) _coroutineOwner.StartCoroutine(LoadCoopProfilesCoroutine());
+            QuestMapDebugLog.Info(Log, $"QUESTMAP_COOP_VIEW screen={_screen.GetInstanceID()}; mode={_mode}; selected={_coopSelectedProfileIds.Count}");
+        }
+        catch (Exception exception)
+        {
+            Log.LogError($"QUESTMAP_COOP_ERROR phase=rebuild; {exception}");
+            Dispose();
+            _tasksPanel?.Show(InventoryController, QuestController, Session, _questsAdditionalFilter);
+            if (_tasksPanel is not null) _tasksPanel.gameObject.SetActive(true);
+        }
+    }
+
+    /// <summary>
+    /// One toggle chip per other profile on this server. A <see cref="Toggle"/> directly on
+    /// an <see cref="Image"/> background, not a <see cref="Button"/> plus a toggle - the two
+    /// would both try to own the click.
+    /// </summary>
+    private void BuildCoopPicker(RectTransform host)
+    {
+        foreach (Transform child in host) UnityEngine.Object.Destroy(child.gameObject);
+        _coopPickerToggles.Clear();
+
+        if (!_coopProfilesLoaded)
+        {
+            UnityUiFactory.AddText(host.gameObject, ClientLocale.Text("label.coopLoadingProfiles"), 11,
+                TextAlignmentOptions.MidlineLeft, new Color(0.75f, 0.77f, 0.75f, 1f));
+            return;
+        }
+
+        if (_coopProfiles.Length == 0)
+        {
+            UnityUiFactory.AddText(host.gameObject, ClientLocale.Text("label.coopNoOtherProfiles"), 11,
+                TextAlignmentOptions.MidlineLeft, new Color(0.75f, 0.77f, 0.75f, 1f));
+            return;
+        }
+
+        const float chipWidth = 112f;
+        const float chipHeight = 24f;
+        const float gap = 6f;
+        for (var index = 0; index < _coopProfiles.Length; index++)
+        {
+            var profile = _coopProfiles[index];
+            var chip = UnityUiFactory.CreateRect($"Profile-{profile.ProfileId}", host);
+            chip.anchorMin = chip.anchorMax = new Vector2(0, 1);
+            chip.pivot = new Vector2(0, 1);
+            chip.anchoredPosition = new Vector2(index * (chipWidth + gap), 0);
+            chip.sizeDelta = new Vector2(chipWidth, chipHeight);
+
+            var selected = _coopSelectedProfileIds.Contains(profile.ProfileId);
+            var background = chip.gameObject.AddComponent<Image>();
+            background.color = selected ? QuestGraphPalette.ControlActive : QuestGraphPalette.Control;
+            var text = UnityUiFactory.AddText(chip.gameObject, $"{profile.Nickname} ({profile.Level})", 10,
+                TextAlignmentOptions.Center, Color.white);
+            text.enableWordWrapping = false;
+            text.overflowMode = TextOverflowModes.Ellipsis;
+
+            var toggle = chip.gameObject.AddComponent<Toggle>();
+            toggle.targetGraphic = background;
+            toggle.SetIsOnWithoutNotify(selected);
+            var capturedId = profile.ProfileId;
+            toggle.onValueChanged.AddListener(isOn =>
+            {
+                background.color = isOn ? QuestGraphPalette.ControlActive : QuestGraphPalette.Control;
+                OnCoopProfileToggled(capturedId, isOn);
+            });
+            _coopPickerToggles[profile.ProfileId] = toggle;
+        }
+    }
+
+    private void OnCoopProfileToggled(string profileId, bool isOn)
+    {
+        if (isOn) _coopSelectedProfileIds.Add(profileId);
+        else _coopSelectedProfileIds.Remove(profileId);
+        RefreshCoopContent();
+        if (isOn && !_coopSnapshotsByProfileId.ContainsKey(profileId))
+            _coroutineOwner.StartCoroutine(LoadCoopSnapshotsCoroutine([profileId]));
+    }
+
+    /// <summary>
+    /// Starts the HTTP fetch, then polls <see cref="Task.IsCompleted"/> one frame at a time
+    /// rather than awaiting it directly - the same discipline
+    /// <see cref="Data.QuestMapDataRuntime"/> uses for the topology load, so a completion
+    /// callback that touches Unity UI is never reached from anything but the main thread.
+    /// </summary>
+    private System.Collections.IEnumerator LoadCoopProfilesCoroutine()
+    {
+        if (_coopProfilesLoaded || _coopLoading) yield break;
+        _coopLoading = true;
+        Task<CoopProfileSummary[]> task;
+        try
+        {
+            task = _coopDataSource.LoadProfilesAsync();
+        }
+        catch (Exception exception)
+        {
+            _coopLoading = false;
+            Log.LogError($"QUESTMAP_COOP_ERROR phase=load-profiles-start; {exception}");
+            yield break;
+        }
+
+        while (!task.IsCompleted) yield return null;
+        _coopLoading = false;
+        if (_disposed) yield break;
+
+        if (task.IsFaulted)
+        {
+            Log.LogError($"QUESTMAP_COOP_ERROR phase=load-profiles; {task.Exception?.GetBaseException()}");
+            _coopProfiles = [];
+        }
+        else
+        {
+            _coopProfiles = task.Result;
+        }
+        _coopProfilesLoaded = true;
+        QuestMapDebugLog.Info(Log, $"QUESTMAP_COOP_PROFILES_LOADED count={_coopProfiles.Length}");
+
+        if (!_disposed && IsCoopMode(_mode) && _coopView is not null)
+        {
+            BuildCoopPicker(_coopView.PickerHost);
+            RefreshCoopContent();
+        }
+    }
+
+    private System.Collections.IEnumerator LoadCoopSnapshotsCoroutine(IReadOnlyCollection<string> profileIds)
+    {
+        Task<CoopProfileSnapshot[]> task;
+        try
+        {
+            task = _coopDataSource.LoadSnapshotsAsync(profileIds);
+        }
+        catch (Exception exception)
+        {
+            Log.LogError($"QUESTMAP_COOP_ERROR phase=load-state-start; {exception}");
+            yield break;
+        }
+
+        while (!task.IsCompleted) yield return null;
+        if (_disposed) yield break;
+
+        if (task.IsFaulted)
+        {
+            Log.LogError($"QUESTMAP_COOP_ERROR phase=load-state; {task.Exception?.GetBaseException()}");
+            yield break;
+        }
+
+        foreach (var snapshot in task.Result) _coopSnapshotsByProfileId[snapshot.ProfileId] = snapshot;
+        QuestMapDebugLog.Info(Log,
+            $"QUESTMAP_COOP_STATE_LOADED requested={profileIds.Count}; returned={task.Result.Length}");
+        if (!_disposed && IsCoopMode(_mode) && _coopView is not null) RefreshCoopContent();
+    }
+
+    private void RefreshCoopContent()
+    {
+        if (_coopView is null || _topology is null || _overlay is null) return;
+        var sections = _mode == GlobalQuestGraphMode.CoopCatchUp
+            ? BuildCoopCatchUpSections()
+            : BuildCoopMapSuggestionSections();
+        var emptyKey = _coopSelectedProfileIds.Count == 0 ? "label.coopPickPlayers" : "label.coopNoDataYet";
+        _coopView.SetSections(sections, ClientLocale.Text(emptyKey));
+    }
+
+    /// <summary>
+    /// Chain progress and catch-up maps, pairwise against each selected teammate in turn -
+    /// the same shape as the web app's Catch-Up Planner run once per teammate, since "how far
+    /// behind am I" is fundamentally a two-profile comparison even when several teammates are
+    /// selected at once.
+    /// </summary>
+    private IReadOnlyList<CoopSection> BuildCoopCatchUpSections()
+    {
+        if (_topology is null || _overlay is null) return [];
+        var sections = new List<CoopSection>();
+
+        foreach (var profileId in _coopSelectedProfileIds)
+        {
+            if (!_coopSnapshotsByProfileId.TryGetValue(profileId, out var snapshot)) continue;
+            var nickname = _coopProfiles.FirstOrDefault(profile => profile.ProfileId == profileId)?.Nickname ?? profileId;
+            var otherCompleted = new HashSet<string>(snapshot.CompletedQuestIds, StringComparer.Ordinal);
+
+            var seriesFacts = new List<QuestSeriesFact>();
+            foreach (var node in _topology.Nodes)
+            {
+                if (!QuestSeriesRules.TryParse(node.Name, out var seriesName, out var part)) continue;
+                var mineCompleted = _overlay.AuthoritativeDisplayStates.GetValueOrDefault(node.Id) == QuestMapDisplayStateKind.Completed;
+                seriesFacts.Add(new QuestSeriesFact(node.Id, seriesName, part, mineCompleted, otherCompleted.Contains(node.Id)));
+            }
+
+            // Only series where the two differ - one both are level on says nothing about
+            // catching up and would just bury the ones that do.
+            var seriesRows = QuestSeriesRules.BuildProgress(seriesFacts)
+                .Where(entry => entry.PrimaryFurthest != entry.ComparisonFurthest)
+                .OrderByDescending(entry => Math.Abs(entry.PrimaryFurthest - entry.ComparisonFurthest))
+                .Take(12)
+                .Select(entry => new CoopRow(
+                    entry.SeriesName,
+                    $"{entry.PrimaryFurthest}/{entry.TotalParts} · {entry.ComparisonFurthest}/{entry.TotalParts}",
+                    entry.PrimaryFurthest < entry.ComparisonFurthest ? new Color(0.85f, 0.62f, 0.32f, 1f) : (Color?)null))
+                .ToArray();
+            if (seriesRows.Length > 0)
+            {
+                sections.Add(new CoopSection(
+                    ClientLocale.Format("label.coopChainProgressFor", ClientLocale.Arg("profile", nickname)),
+                    seriesRows,
+                    ClientLocale.Text("label.coopChainProgressSubtitle")));
+            }
+
+            // Catch-up maps: quests they finished, I have not, and I can actually take -
+            // grouped by map NAME rather than id, which folds location aliases together the
+            // same way the InProgress map strip already does.
+            var byMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var node in _topology.Nodes)
+            {
+                if (!_topology.ApplicableQuestIds.Contains(node.Id)) continue;
+                if (!otherCompleted.Contains(node.Id)) continue;
+                if (_overlay.AuthoritativeDisplayStates.GetValueOrDefault(node.Id) == QuestMapDisplayStateKind.Completed) continue;
+                foreach (var map in NodeTaskLocations(node))
+                {
+                    if (string.IsNullOrWhiteSpace(map.Name)) continue;
+                    byMap[map.Name] = byMap.GetValueOrDefault(map.Name) + 1;
+                }
+            }
+            var mapRows = byMap
+                .OrderByDescending(pair => pair.Value)
+                .Take(8)
+                .Select(pair => new CoopRow(pair.Key, pair.Value.ToString()))
+                .ToArray();
+            if (mapRows.Length > 0)
+            {
+                sections.Add(new CoopSection(
+                    ClientLocale.Format("label.coopCatchUpMapsFor", ClientLocale.Arg("profile", nickname)),
+                    mapRows,
+                    ClientLocale.Text("label.coopCatchUpMapsSubtitle")));
+            }
+        }
+
+        return sections;
+    }
+
+    /// <summary>
+    /// "Where should this group raid together" across every selected teammate at once, via
+    /// the same <see cref="CoopMapRules"/> the web app's Coop Map Helper uses. "Outstanding"
+    /// for a teammate can only mean "not completed" here - unlike the local player, the
+    /// server does not tell the client whether a quest is merely available or already
+    /// in progress for someone else, only whether they have finished it.
+    /// </summary>
+    private IReadOnlyList<CoopSection> BuildCoopMapSuggestionSections()
+    {
+        if (_topology is null || _overlay is null) return [];
+        var selected = _coopSelectedProfileIds.Where(_coopSnapshotsByProfileId.ContainsKey).ToArray();
+        if (selected.Length == 0) return [];
+
+        const string localId = "__local__";
+        var profileIds = new[] { localId }.Concat(selected).ToArray();
+        var facts = new List<CoopMapQuestFact>();
+        foreach (var node in _topology.Nodes)
+        {
+            if (!_topology.ApplicableQuestIds.Contains(node.Id)) continue;
+            var maps = NodeTaskLocations(node).Where(map => !string.IsNullOrWhiteSpace(map.Name)).ToArray();
+            if (maps.Length == 0) continue;
+
+            var mineOutstanding = _overlay.AuthoritativeDisplayStates.GetValueOrDefault(node.Id) != QuestMapDisplayStateKind.Completed;
+            if (mineOutstanding)
+                foreach (var map in maps) facts.Add(new CoopMapQuestFact(localId, node.Id, map.Name, map.Name));
+
+            foreach (var profileId in selected)
+            {
+                if (_coopSnapshotsByProfileId[profileId].CompletedQuestIds.Contains(node.Id, StringComparer.Ordinal)) continue;
+                foreach (var map in maps) facts.Add(new CoopMapQuestFact(profileId, node.Id, map.Name, map.Name));
+            }
+        }
+
+        var localLabel = ClientLocale.Text("label.coopYou");
+        return CoopMapRules.BuildRows(facts, profileIds)
+            .Take(15)
+            .Select(row =>
+            {
+                var perProfileText = string.Join("   ", row.PerProfile.Select(count =>
+                {
+                    var label = count.ProfileId == localId
+                        ? localLabel
+                        : _coopProfiles.FirstOrDefault(profile => profile.ProfileId == count.ProfileId)?.Nickname ?? count.ProfileId;
+                    return $"{label} {count.Count}";
+                }));
+                return new CoopSection(
+                    row.MapName,
+                    [new CoopRow(perProfileText, row.SharedByAll.ToString(), row.SharedByAll > 0 ? new Color(0.85f, 0.75f, 0.35f, 1f) : (Color?)null)],
+                    ClientLocale.Text("label.coopMapSuggestionsSubtitle"));
+            })
+            .ToArray();
     }
 
     private void RebuildGraph(bool preserveViewport)
@@ -857,6 +1206,12 @@ internal sealed class GlobalTasksScreenController : IDisposable
         AddHeaderButton(header, "QuestMapTab", ClientLocale.Text("label.questMap"), 130, -4, 100,
             _mode == GlobalQuestGraphMode.Full, () => ShowMode(GlobalQuestGraphMode.Full), enabled: !_raidInProgressOnly,
             tooltip: _mode == GlobalQuestGraphMode.Full ? null : () => ClientLocale.Text("tooltip.openQuestMap"));
+        AddHeaderButton(header, "CoopCatchUpTab", ClientLocale.Text("label.coopCatchUp"), 236, -4, 118,
+            _mode == GlobalQuestGraphMode.CoopCatchUp, () => ShowMode(GlobalQuestGraphMode.CoopCatchUp), enabled: !_raidInProgressOnly,
+            tooltip: _mode == GlobalQuestGraphMode.CoopCatchUp ? null : () => ClientLocale.Text("tooltip.openCoopCatchUp"));
+        AddHeaderButton(header, "CoopMapTab", ClientLocale.Text("label.coopMapSuggestions"), 360, -4, 140,
+            _mode == GlobalQuestGraphMode.CoopMapSuggestions, () => ShowMode(GlobalQuestGraphMode.CoopMapSuggestions), enabled: !_raidInProgressOnly,
+            tooltip: _mode == GlobalQuestGraphMode.CoopMapSuggestions ? null : () => ClientLocale.Text("tooltip.openCoopMapSuggestions"));
         _notesButtonImage = AddRightHeaderButton(header, "Notes", ClientLocale.Text("label.notes"), 116, 72,
             _overlayMode == GlobalOverlayMode.Notes, () => ToggleNativeOverlay(true),
             () => ClientLocale.Text(_overlayMode == GlobalOverlayMode.Notes ? "tooltip.closeNotes" : "tooltip.openNotes"));
@@ -884,7 +1239,11 @@ internal sealed class GlobalTasksScreenController : IDisposable
         }
 
         BuildSearchControl(header);
-        if (_mode == GlobalQuestGraphMode.Full)
+        if (IsCoopMode(_mode))
+        {
+            // No graph filters apply to a Coop summary list.
+        }
+        else if (_mode == GlobalQuestGraphMode.Full)
         {
             AddHeaderButton(header, "Future", ClientLocale.Text("label.future"), 12, -70, 68, _showAllFuture, ToggleFuture, 23,
                 tooltip: () => ClientLocale.Text(_showAllFuture ? "tooltip.showNextFuture" : "tooltip.showAllFuture"));
@@ -909,7 +1268,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         separator.anchoredPosition = new Vector2(282, -43);
         separator.sizeDelta = new Vector2(1, 48);
         separator.gameObject.AddComponent<Image>().color = QuestGraphPalette.Border;
-        BuildTraderStrip(header);
+        if (!IsCoopMode(_mode)) BuildTraderStrip(header);
         if (_mode == GlobalQuestGraphMode.InProgress) BuildInProgressMapStrip(header);
         UpdateOverlayButtons();
     }
