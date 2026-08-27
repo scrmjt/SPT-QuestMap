@@ -131,7 +131,6 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
     private QuestTaskTextSize TaskTextSize => _workspace.TaskListQuestTextSize();
     private float TaskFontSize => QuestTableLayoutRules.TaskFontSize(TaskTextSize);
     private float CompactTaskRowHeight => QuestTableLayoutRules.CompactTaskRowHeight(TaskTextSize);
-    private float ProgressTaskRowHeight => QuestTableLayoutRules.ProgressTaskRowHeight(TaskTextSize);
 
     public static InProgressQuestTableView Create(
         RectTransform mountRect,
@@ -567,7 +566,11 @@ internal sealed class InProgressQuestTableView : IGlobalTasksContentView
 
     private void RebuildAllRows(IEnumerable<QuestGraphNode> cacheNodes)
     {
-        foreach (Transform child in _content) UnityEngine.Object.Destroy(child.gameObject);
+        foreach (Transform child in _content)
+        {
+            child.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(child.gameObject);
+        }
         _rowBackgrounds.Clear();
         _rows.Clear();
         _sectionHeaders.Clear();

@@ -173,6 +173,9 @@ internal sealed class QuestScreenCoordinator : IDisposable
         // computing the very layout the coroutine is waiting for.
         Veil(screen);
         _globalMountCoroutine = _coroutineOwner.StartCoroutine(MountPendingGlobalAfterVanillaLayout());
+        // Re-opening the screen before a previous timeout fired would otherwise leak the old
+        // coroutine, which would then reveal a veil belonging to the newer open.
+        if (_veilTimeoutCoroutine is not null) _coroutineOwner.StopCoroutine(_veilTimeoutCoroutine);
         _veilTimeoutCoroutine = _coroutineOwner.StartCoroutine(RevealVeilAfterTimeout());
     }
 

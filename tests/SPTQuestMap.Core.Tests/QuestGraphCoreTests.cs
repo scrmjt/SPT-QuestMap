@@ -41,7 +41,6 @@ public sealed class QuestGraphCoreTests
             Assert.That(QuestTableLayoutRules.TaskFontSize(QuestTaskTextSize.Medium), Is.EqualTo(13f));
             Assert.That(QuestTableLayoutRules.TaskFontSize(QuestTaskTextSize.Large), Is.EqualTo(15f));
             Assert.That(QuestTableLayoutRules.CompactTaskRowHeight(QuestTaskTextSize.Small), Is.EqualTo(20f));
-            Assert.That(QuestTableLayoutRules.ProgressTaskRowHeight(QuestTaskTextSize.Large), Is.EqualTo(38f));
             Assert.That(QuestTableLayoutRules.RaidTrackedTaskFontSize(QuestTaskTextSize.Small), Is.EqualTo(10f));
             Assert.That(QuestTableLayoutRules.RaidTrackedTaskFontSize(QuestTaskTextSize.Large), Is.EqualTo(14f));
             Assert.That(QuestTableLayoutRules.RaidTrackedProgressFontSize(QuestTaskTextSize.Medium), Is.EqualTo(11f));

@@ -75,6 +75,36 @@ internal static class UnityUiFactory
         rect.offsetMax = new Vector2(-right, -top);
     }
 
+    /// <summary>
+    /// A row in a top-down list: full parent width minus the given insets, a fixed height,
+    /// positioned <paramref name="top"/> pixels below the parent-s top edge.
+    ///
+    /// Use this instead of hand-setting anchoredPosition/sizeDelta on a horizontally
+    /// stretched rect. Unity resolves a stretched axis as
+    /// <c>offsetMin.x = anchoredPosition.x - sizeDelta.x * pivot.x</c>, so with the common
+    /// pivot.x of 0.5 an anchoredPosition.x of 10 - intended as a 10px indent - actually
+    /// lands the left edge at 10 + (left+right)/2 and pins the right edge flush. Pinning
+    /// pivot.x to 0 makes anchoredPosition.x mean the literal left inset, which is why every
+    /// other rect in this codebase carrying a non-zero anchoredPosition.x also pins its
+    /// pivot.x to 0 or 1.
+    /// </summary>
+    public static RectTransform CreateListRow(
+        string name,
+        Transform parent,
+        float top,
+        float height,
+        float left = 0,
+        float right = 0)
+    {
+        var rect = CreateRect(name, parent);
+        rect.anchorMin = new Vector2(0, 1);
+        rect.anchorMax = new Vector2(1, 1);
+        rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = new Vector2(left, -top);
+        rect.sizeDelta = new Vector2(-left - right, height);
+        return rect;
+    }
+
     public static void CopyRect(RectTransform source, RectTransform target)
     {
         target.anchorMin = source.anchorMin;

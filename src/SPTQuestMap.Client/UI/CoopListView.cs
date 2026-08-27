@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using BepInEx.Logging;
 using TMPro;
 using UnityEngine;
@@ -26,16 +25,20 @@ internal sealed class CoopListView : IDisposable
     private const float HeaderHeight = 96f;
     private const float SectionGap = 10f;
     private const float SectionTitleHeight = 22f;
+    private const float SubtitleHeight = 16f;
     private const float RowHeight = 18f;
     private const float SectionPadding = 6f;
+    private const float SideInset = 10f;
+    private const float DefaultValueColumnWidth = 64f;
 
     private readonly RectTransform _content;
     private readonly ManualLogSource _log;
     private bool _disposed;
 
-    private CoopListView(RectTransform root, RectTransform pickerHost, RectTransform content, ManualLogSource log)
+    private CoopListView(RectTransform root, RectTransform headerRect, RectTransform pickerHost, RectTransform content, ManualLogSource log)
     {
         Root = root;
+        HeaderRect = headerRect;
         PickerHost = pickerHost;
         _content = content;
         _log = log;
@@ -43,10 +46,17 @@ internal sealed class CoopListView : IDisposable
 
     public RectTransform Root { get; }
 
+    /// <summary>
+    /// The header strip. The controller draws the four mode tabs onto this, exactly as it
+    /// does onto the graph views' own headers - the tab bar is owned by whichever view is
+    /// currently mounted, so a view without one strands the player with no way back.
+    /// </summary>
+    public RectTransform HeaderRect { get; }
+
     /// <summary>Where the caller places its own profile-picker row, above the scrolling content.</summary>
     public RectTransform PickerHost { get; }
 
-    public static CoopListView Create(RectTransform mountRect, string title, ManualLogSource log)
+    public static CoopListView Create(RectTransform mountRect, ManualLogSource log)
     {
         var root = UnityUiFactory.CreateRect("QuestMapCoop", mountRect.parent);
         UnityUiFactory.CopyRect(mountRect, root);
@@ -61,21 +71,15 @@ internal sealed class CoopListView : IDisposable
         header.offsetMax = Vector2.zero;
         header.gameObject.AddComponent<Image>().color = new Color(0.055f, 0.07f, 0.075f, 0.99f);
 
-        var titleRect = UnityUiFactory.CreateRect("Title", header);
-        titleRect.anchorMin = new Vector2(0, 1);
-        titleRect.anchorMax = new Vector2(1, 1);
-        titleRect.pivot = new Vector2(0.5f, 1);
-        titleRect.anchoredPosition = new Vector2(14, -8);
-        titleRect.sizeDelta = new Vector2(-28, 24);
-        var titleText = UnityUiFactory.AddText(titleRect.gameObject, title, 15, TextAlignmentOptions.MidlineLeft, Color.white);
-        titleText.fontStyle = FontStyles.Bold;
-
         var pickerHost = UnityUiFactory.CreateRect("Picker", header);
         pickerHost.anchorMin = new Vector2(0, 0);
         pickerHost.anchorMax = new Vector2(1, 1);
         pickerHost.pivot = new Vector2(0.5f, 1);
         pickerHost.offsetMin = new Vector2(14, 4);
-        pickerHost.offsetMax = new Vector2(-14, -34);
+        pickerHost.offsetMax = new Vector2(-14, -42);
+        // Chips are laid out left-to-right and would otherwise spill past the header into the
+        // scrolling content once there are more than a handful of profiles.
+        pickerHost.gameObject.AddComponent<RectMask2D>();
 
         var viewport = UnityUiFactory.CreateRect("Viewport", root);
         UnityUiFactory.Stretch(viewport, 8, 8, HeaderHeight + 4, 8);
@@ -107,7 +111,7 @@ internal sealed class CoopListView : IDisposable
         scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         scrollRect.verticalScrollbarSpacing = 2;
 
-        return new CoopListView(root, pickerHost, content, log);
+        return new CoopListView(root, header, pickerHost, content, log);
     }
 
     /// <summary>
@@ -116,68 +120,57 @@ internal sealed class CoopListView : IDisposable
     /// enough that the InProgress table's cache-and-diff approach would be effort spent on a
     /// path that is not actually hot.
     /// </summary>
-    public void SetSections(IReadOnlyList<CoopSection> sections, string emptyMessage)
+    public void SetSections(IReadOnlyList<CoopSection> sections, string emptyMessage,
+        float valueColumnWidth = DefaultValueColumnWidth)
     {
-        foreach (Transform child in _content) UnityEngine.Object.Destroy(child.gameObject);
+        ClearContent();
 
         if (sections.Count == 0)
         {
-            var empty = UnityUiFactory.CreateRect("Empty", _content);
-            empty.anchorMin = new Vector2(0, 1);
-            empty.anchorMax = new Vector2(1, 1);
-            empty.pivot = new Vector2(0.5f, 1);
-            empty.anchoredPosition = new Vector2(0, -10);
-            empty.sizeDelta = new Vector2(-16, 40);
-            var text = UnityUiFactory.AddText(empty.gameObject, emptyMessage, 12, TextAlignmentOptions.TopLeft, new Color(0.7f, 0.72f, 0.7f, 1f));
+            var empty = UnityUiFactory.CreateListRow("Empty", _content, top: 10, height: 40, left: 8, right: 8);
+            var text = UnityUiFactory.AddText(empty.gameObject, emptyMessage, 12, TextAlignmentOptions.TopLeft,
+                new Color(0.7f, 0.72f, 0.7f, 1f));
             text.enableWordWrapping = true;
             _content.sizeDelta = new Vector2(0, 50);
             return;
         }
 
         var y = 4f;
-        foreach (var section in sections)
+        for (var index = 0; index < sections.Count; index++)
         {
-            var sectionRoot = UnityUiFactory.CreateRect($"Section-{y}", _content);
-            sectionRoot.anchorMin = new Vector2(0, 1);
-            sectionRoot.anchorMax = new Vector2(1, 1);
-            sectionRoot.pivot = new Vector2(0.5f, 1);
-            sectionRoot.anchoredPosition = new Vector2(0, -y);
-            var sectionHeight = SectionTitleHeight + (section.Subtitle is null ? 0 : 16f) + section.Rows.Count * RowHeight + SectionPadding * 2;
-            sectionRoot.sizeDelta = new Vector2(-8, sectionHeight);
+            var section = sections[index];
+            var sectionHeight = SectionTitleHeight
+                + (section.Subtitle is null ? 0 : SubtitleHeight)
+                + section.Rows.Count * RowHeight
+                + SectionPadding * 2;
+            var sectionRoot = UnityUiFactory.CreateListRow($"Section-{index}", _content, y, sectionHeight, left: 4, right: 4);
             sectionRoot.gameObject.AddComponent<Image>().color = new Color(0.10f, 0.12f, 0.125f, 0.9f);
 
             var rowY = SectionPadding;
-            var titleRect = UnityUiFactory.CreateRect("Title", sectionRoot);
-            titleRect.anchorMin = new Vector2(0, 1);
-            titleRect.anchorMax = new Vector2(1, 1);
-            titleRect.pivot = new Vector2(0.5f, 1);
-            titleRect.anchoredPosition = new Vector2(10, -rowY);
-            titleRect.sizeDelta = new Vector2(-20, SectionTitleHeight);
-            var titleText = UnityUiFactory.AddText(titleRect.gameObject, section.Title, 13, TextAlignmentOptions.MidlineLeft, Color.white);
+            var titleRect = UnityUiFactory.CreateListRow("Title", sectionRoot, rowY, SectionTitleHeight, SideInset, SideInset);
+            var titleText = UnityUiFactory.AddText(titleRect.gameObject, section.Title, 13,
+                TextAlignmentOptions.MidlineLeft, Color.white);
             titleText.fontStyle = FontStyles.Bold;
+            titleText.enableWordWrapping = false;
+            titleText.overflowMode = TextOverflowModes.Ellipsis;
             rowY += SectionTitleHeight;
 
             if (section.Subtitle is not null)
             {
-                var subtitleRect = UnityUiFactory.CreateRect("Subtitle", sectionRoot);
-                subtitleRect.anchorMin = new Vector2(0, 1);
-                subtitleRect.anchorMax = new Vector2(1, 1);
-                subtitleRect.pivot = new Vector2(0.5f, 1);
-                subtitleRect.anchoredPosition = new Vector2(10, -rowY);
-                subtitleRect.sizeDelta = new Vector2(-20, 16);
+                var subtitleRect = UnityUiFactory.CreateListRow("Subtitle", sectionRoot, rowY, SubtitleHeight, SideInset, SideInset);
                 var subtitleText = UnityUiFactory.AddText(subtitleRect.gameObject, section.Subtitle, 10,
                     TextAlignmentOptions.MidlineLeft, new Color(0.75f, 0.77f, 0.75f, 1f));
-                rowY += 16f;
+                subtitleText.enableWordWrapping = false;
+                subtitleText.overflowMode = TextOverflowModes.Ellipsis;
+                rowY += SubtitleHeight;
             }
 
             foreach (var row in section.Rows)
             {
-                var rowRect = UnityUiFactory.CreateRect("Row", sectionRoot);
-                rowRect.anchorMin = new Vector2(0, 1);
-                rowRect.anchorMax = new Vector2(1, 1);
-                rowRect.pivot = new Vector2(0.5f, 1);
-                rowRect.anchoredPosition = new Vector2(10, -rowY);
-                rowRect.sizeDelta = new Vector2(row.Value is null ? -20 : -84, RowHeight);
+                // The label yields the value column's width plus a gap so the two never
+                // overlap, rather than both being sized against the full row width.
+                var labelRight = row.Value is null ? SideInset : SideInset + valueColumnWidth + 8f;
+                var rowRect = UnityUiFactory.CreateListRow("Row", sectionRoot, rowY, RowHeight, SideInset, labelRight);
                 var rowText = UnityUiFactory.AddText(rowRect.gameObject, row.Text, 11, TextAlignmentOptions.MidlineLeft,
                     row.TextColor ?? new Color(0.88f, 0.89f, 0.87f, 1f));
                 rowText.enableWordWrapping = false;
@@ -186,14 +179,14 @@ internal sealed class CoopListView : IDisposable
                 if (row.Value is not null)
                 {
                     var valueRect = UnityUiFactory.CreateRect("Value", sectionRoot);
-                    valueRect.anchorMin = new Vector2(1, 1);
-                    valueRect.anchorMax = new Vector2(1, 1);
+                    valueRect.anchorMin = valueRect.anchorMax = new Vector2(1, 1);
                     valueRect.pivot = new Vector2(1, 1);
-                    valueRect.anchoredPosition = new Vector2(-10, -rowY);
-                    valueRect.sizeDelta = new Vector2(64, RowHeight);
+                    valueRect.anchoredPosition = new Vector2(-SideInset, -rowY);
+                    valueRect.sizeDelta = new Vector2(valueColumnWidth, RowHeight);
                     var valueText = UnityUiFactory.AddText(valueRect.gameObject, row.Value, 11,
                         TextAlignmentOptions.MidlineRight, row.TextColor ?? new Color(0.88f, 0.89f, 0.87f, 1f));
                     valueText.fontStyle = FontStyles.Bold;
+                    valueText.enableWordWrapping = false;
                 }
 
                 rowY += RowHeight;
@@ -204,6 +197,22 @@ internal sealed class CoopListView : IDisposable
 
         _content.sizeDelta = new Vector2(0, y);
         Canvas.ForceUpdateCanvases();
+    }
+
+    /// <summary>
+    /// Deactivates before destroying. <see cref="UnityEngine.Object.Destroy"/> only takes
+    /// effect at the end of the frame, so without the deactivation the outgoing rows would
+    /// still render for one frame on top of the incoming ones - both are absolutely
+    /// positioned at the same offsets, so it shows up as a garbled frame on every refresh.
+    /// Same order as <c>GlobalTasksScreenController.RebuildInProgressChrome</c>.
+    /// </summary>
+    private void ClearContent()
+    {
+        foreach (Transform child in _content)
+        {
+            child.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(child.gameObject);
+        }
     }
 
     private static Scrollbar CreateScrollbar(RectTransform viewport)
@@ -232,7 +241,11 @@ internal sealed class CoopListView : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        if (Root != null) UnityEngine.Object.Destroy(Root.gameObject);
+        if (Root != null)
+        {
+            Root.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(Root.gameObject);
+        }
         QuestMapDebugLog.Info(_log, "QUESTMAP_COOP_LIST_DISPOSE");
     }
 }

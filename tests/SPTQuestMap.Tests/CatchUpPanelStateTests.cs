@@ -267,6 +267,19 @@ public sealed class CatchUpPanelStateTests
     {
         /// <summary>Quest name as shown; series grouping is parsed from it. Defaults to the id.</summary>
         public string? DisplayName { get; init; }
+
+        /// <summary>
+        /// Map ids whose objective the primary profile has already finished. A quest is modelled
+        /// with one objective per map, so this is how a partially-done multi-map quest is
+        /// expressed - the case where a map should stop counting as outstanding work.
+        /// </summary>
+        public string[] PrimaryDoneMaps { get; init; } = [];
+
+        /// <summary>As <see cref="PrimaryDoneMaps"/>, for the comparison profile.</summary>
+        public string[] ComparisonDoneMaps { get; init; } = [];
+
+        /// <summary>One objective per map, so completion can be tracked per map.</summary>
+        public string ObjectiveId(string mapId) => $"{Id}::{mapId}";
     }
 
     internal static QuestFact Quest(string id, string traderId, string mapId, string mapName, string primary, string comparison) =>
@@ -283,8 +296,8 @@ public sealed class CatchUpPanelStateTests
         var state = new QuestMapPageState();
         state.SetData(
             BuildTopology(quests),
-            BuildProfile("profile", "Primary", quests, fact => fact.Primary),
-            BuildProfile("comparison", "Comparison", quests, fact => fact.Comparison));
+            BuildProfile("profile", "Primary", quests, fact => fact.Primary, fact => fact.PrimaryDoneMaps),
+            BuildProfile("comparison", "Comparison", quests, fact => fact.Comparison, fact => fact.ComparisonDoneMaps));
         return state;
     }
 
@@ -292,8 +305,16 @@ public sealed class CatchUpPanelStateTests
     {
         var nodes = quests.Select(fact =>
         {
+            var objectives = fact.Maps
+                .Select(map => new ObjectiveDefinitionDto(
+                    fact.ObjectiveId(map.Id), $"Do the thing on {map.Name}", "CounterCreator",
+                    null, null, 1, null, [])
+                {
+                    TaskLocations = [map],
+                })
+                .ToArray();
             var node = new QuestNodeDto(fact.Id, fact.DisplayName ?? fact.Id, string.Empty, fact.TraderId, fact.TraderId, null, string.Empty,
-                "Any", new QuestLocationDto("any", null, true, null), null, false, [], [], [], [], []);
+                "Any", new QuestLocationDto("any", null, true, null), null, false, [], [], objectives, [], []);
             return fact.OutOfRaid ? node : node with { ActualMaps = fact.Maps };
         }).ToArray();
 
@@ -307,11 +328,26 @@ public sealed class CatchUpPanelStateTests
         return new QuestTopologyDto("version", nodes, [], traders, [], []);
     }
 
-    private static ProfileStateDto BuildProfile(string id, string nickname, QuestFact[] quests, Func<QuestFact, string> displayState)
+    private static ProfileStateDto BuildProfile(
+        string id,
+        string nickname,
+        QuestFact[] quests,
+        Func<QuestFact, string> displayState,
+        Func<QuestFact, string[]>? doneMaps = null)
     {
         var ids = quests.Select(fact => fact.Id).ToArray();
         var states = quests
-            .Select(fact => new QuestStateDto(fact.Id, null, displayState(fact), true, true, null, [], null, [], null))
+            .Select(fact =>
+            {
+                var done = doneMaps?.Invoke(fact) ?? [];
+                var objectives = fact.Maps
+                    .Select(map => new ObjectiveProgressDto(
+                        fact.ObjectiveId(map.Id),
+                        done.Contains(map.Id, StringComparer.OrdinalIgnoreCase),
+                        null, 1, true))
+                    .ToArray();
+                return new QuestStateDto(fact.Id, null, displayState(fact), true, true, null, [], null, objectives, null);
+            })
             .ToArray();
         return new ProfileStateDto(id, nickname, "Usec", 10, 0, false, false, states, [], ids, ids);
     }

@@ -141,7 +141,9 @@ public sealed class QuestMapPageState
                 if (!applicable.Contains(node.Id)) continue;
                 if (other(node.Id)?.DisplayState != "Completed") continue;
                 if (own(node.Id)?.DisplayState == "Completed") continue;
-                if (!_nodeMaps.TryGetValue(node.Id, out var maps)) continue;
+                // Only maps this player still has an unfinished objective on.
+                var maps = OutstandingMaps(node.Id, own(node.Id));
+                if (maps.Length == 0) continue;
 
                 foreach (var map in maps)
                 {
@@ -208,8 +210,9 @@ public sealed class QuestMapPageState
             var states = profile.Quests.ToDictionary(quest => quest.QuestId, StringComparer.Ordinal);
             foreach (var questId in applicable)
             {
-                if (!NeedsRaid(states.GetValueOrDefault(questId))) continue;
-                if (!_nodeMaps.TryGetValue(questId, out var maps)) continue;
+                var questState = states.GetValueOrDefault(questId);
+                if (!NeedsRaid(questState)) continue;
+                var maps = OutstandingMaps(questId, questState);
                 foreach (var map in maps)
                 {
                     if (!IsRaidableMap(map.Id)) continue;
@@ -830,6 +833,41 @@ public sealed class QuestMapPageState
     /// deliberately excluded: its objectives are already met, so it only needs a
     /// trader hand-in and must not inflate the "play this map together" ranking.
     /// </summary>
+    /// <summary>
+    /// The maps where this profile still has an unfinished objective for <paramref name="questId"/>.
+    ///
+    /// A quest's map list is the union of its objectives' locations, and objectives complete
+    /// independently: "Needle in a Haystack" spans Ground Zero, Shoreline, Interchange and
+    /// Streets, and once the first three legs are done it is Streets work only. Every "where do
+    /// I still have to raid" surface must ask this rather than reuse <c>_nodeMaps</c>, which
+    /// answers "every map this quest mentions" — the right answer for filters and for badges
+    /// that describe the quest itself, and the wrong one here.
+    ///
+    /// Falls back to the unfiltered list whenever there is nothing to refine with (no per-
+    /// objective progress, or a topology whose objectives carry no locations), so a data gap
+    /// never silently drops a quest off every map.
+    /// </summary>
+    private QuestMapReferenceDto[] OutstandingMaps(string questId, QuestStateDto? state)
+    {
+        if (!_nodeMaps.TryGetValue(questId, out var maps) || maps.Length == 0) return [];
+        if (state is null || state.Objectives.Length == 0) return maps;
+        if (!_nodeById.TryGetValue(questId, out var node)) return maps;
+        if (node.Objectives.All(objective => objective.TaskLocations.Length == 0)) return maps;
+
+        var completed = state.Objectives
+            .Where(objective => objective.Complete)
+            .Select(objective => objective.ObjectiveId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (completed.Count == 0) return maps;
+
+        var remaining = node.Objectives
+            .Where(objective => !completed.Contains(objective.Id))
+            .SelectMany(objective => objective.TaskLocations)
+            .Select(location => location.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return maps.Where(map => remaining.Contains(map.Id)).ToArray();
+    }
+
     private static bool NeedsRaid(QuestStateDto? state) => state?.DisplayState is "Available" or "InProgress";
 
     /// <summary>
@@ -1016,18 +1054,26 @@ public sealed class QuestMapPageState
         var counts = new Dictionary<string, (int Primary, int Comparison, int Shared)>(StringComparer.Ordinal);
         foreach (var questId in _applicable)
         {
-            if (!_nodeMaps.TryGetValue(questId, out var maps)) continue;
             var primary = NeedsRaid(GetQuestState(questId));
             var comparison = CompareMode && NeedsRaid(GetComparisonQuestState(questId));
             if (!primary && !comparison) continue;
 
-            foreach (var map in maps)
+            // The two players have finished different legs, so each has its own remaining maps
+            // and "shared" means a map where both still have work.
+            var primaryMaps = primary ? OutstandingMaps(questId, GetQuestState(questId)) : [];
+            var comparisonMaps = comparison ? OutstandingMaps(questId, GetComparisonQuestState(questId)) : [];
+            var primaryMapIds = primaryMaps.Select(map => map.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var comparisonMapIds = comparisonMaps.Select(map => map.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var map in primaryMaps.Concat(comparisonMaps).DistinctBy(map => map.Id, StringComparer.OrdinalIgnoreCase))
             {
+                var primaryHere = primaryMapIds.Contains(map.Id);
+                var comparisonHere = comparisonMapIds.Contains(map.Id);
                 var current = counts.GetValueOrDefault(map.Id);
                 counts[map.Id] = (
-                    current.Primary + (primary ? 1 : 0),
-                    current.Comparison + (comparison ? 1 : 0),
-                    current.Shared + (primary && comparison ? 1 : 0));
+                    current.Primary + (primaryHere ? 1 : 0),
+                    current.Comparison + (comparisonHere ? 1 : 0),
+                    current.Shared + (primaryHere && comparisonHere ? 1 : 0));
             }
         }
 
@@ -1092,8 +1138,7 @@ public sealed class QuestMapPageState
         {
             foreach (var quest in chain.NextQuests)
             {
-                if (!_nodeMaps.TryGetValue(quest.QuestId, out var maps)) continue;
-                foreach (var map in maps)
+                foreach (var map in OutstandingMaps(quest.QuestId, GetQuestState(quest.QuestId)))
                 {
                     if (!IsRaidableMap(map.Id)) continue;
                     if (!counts.TryGetValue(map.Id, out var entry)) entry = (map.Name, new List<string>());
@@ -1140,10 +1185,19 @@ public sealed class QuestMapPageState
         {
             var primaryNeedsRaid = NeedsRaid(GetQuestState(node.Id));
             var comparisonNeedsRaid = NeedsRaid(GetComparisonQuestState(node.Id));
+            // Per player, because a map one of them has finished this quest's leg on is not a
+            // map they can still close it out on together.
+            var primaryMapIds = (primaryNeedsRaid ? OutstandingMaps(node.Id, GetQuestState(node.Id)) : [])
+                .Select(map => map.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var comparisonMapIds = (comparisonNeedsRaid ? OutstandingMaps(node.Id, GetComparisonQuestState(node.Id)) : [])
+                .Select(map => map.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var map in _nodeMaps[node.Id])
             {
                 if (!IsRaidableMap(map.Id)) continue;
-                facts.Add(new SharedMapQuestFact(node.Id, map.Id, map.Name, primaryNeedsRaid, comparisonNeedsRaid));
+                facts.Add(new SharedMapQuestFact(
+                    node.Id, map.Id, map.Name,
+                    primaryMapIds.Contains(map.Id),
+                    comparisonMapIds.Contains(map.Id)));
             }
         }
 

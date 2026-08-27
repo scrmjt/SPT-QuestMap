@@ -83,6 +83,36 @@ public static class QuestObjectiveMapRules
             .ToArray();
     }
 
+    /// <summary>
+    /// The maps a profile still has work to do on for <paramref name="quest"/>, given the
+    /// objectives they have already finished.
+    ///
+    /// This is deliberately NOT "every map the quest mentions". A quest like "Needle in a
+    /// Haystack" spans four maps; once its Ground Zero objective is done, that map has nothing
+    /// left for it. Counting a quest against every map it touches made finished maps keep
+    /// showing up in the Coop views.
+    ///
+    /// A quest whose remaining objectives carry no map at all (a pure hand-in) returns nothing,
+    /// which is correct - there is no raid to run for it. A quest with no objectives at all
+    /// falls back to its own <see cref="QuestGraphNode.TaskLocation"/>.
+    /// </summary>
+    public static IReadOnlyList<QuestMapReference> OutstandingTaskLocations(
+        QuestGraphNode quest,
+        IReadOnlyCollection<string> completedObjectiveIds)
+    {
+        var completed = completedObjectiveIds as ISet<string>
+            ?? completedObjectiveIds.ToHashSet(StringComparer.Ordinal);
+        var locations = quest.Objectives
+            .Where(objective => !completed.Contains(objective.Id))
+            .SelectMany(objective => objective.TaskLocations)
+            .Where(map => !string.IsNullOrWhiteSpace(map.Id))
+            .GroupBy(map => map.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        if (locations.Length > 0) return locations;
+        return quest.Objectives.Count == 0 ? [quest.TaskLocation] : [];
+    }
+
     public static bool IsMapRelated(
         QuestGraphNode quest,
         IReadOnlyCollection<string> currentMapIds)

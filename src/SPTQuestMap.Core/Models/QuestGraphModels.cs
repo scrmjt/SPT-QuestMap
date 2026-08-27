@@ -455,11 +455,27 @@ public sealed record QuestEdgeRoute(
 public sealed record CoopProfileSummary(string ProfileId, string Nickname, string Side, int Level);
 
 /// <summary>
-/// What one other profile has finished, for the in-game Coop views. Deliberately just
-/// completed-quest ids: the client already has the full topology locally (via the topology
-/// route) and only needs to know what another profile has finished to work out chain
-/// progress and catch-up maps for itself. Sending anything more would be someone else's
-/// profile data leaving the server for no reason.
+/// What one other profile has finished, and what they can act on right now, for the in-game
+/// Coop views.
+///
+/// Still deliberately narrow - two id lists, no names, objectives, progress or inventory. The
+/// client has the full topology locally and needs exactly two facts about a teammate to be
+/// useful: what they have finished (chain progress, catch-up) and what they could take into a
+/// raid today (which map is worth running together). Completion alone is not enough for the
+/// second question: "not completed" includes every quest locked behind level and prerequisites,
+/// which made every map look equally busy.
+///
+/// <see cref="CompletedObjectiveIds"/> is a flat set of finished objective ids across that
+/// profile's quests - objective ids are globally unique condition ids, so they need no
+/// per-quest nesting. It exists so a multi-map quest stops counting against maps whose leg is
+/// already done.
+///
+/// <see cref="ActiveQuestIds"/> and <see cref="CompletedObjectiveIds"/> may be null when
+/// talking to an older server; treat null as empty.
 /// </summary>
-public sealed record CoopProfileSnapshot(string ProfileId, string[] CompletedQuestIds);
+public sealed record CoopProfileSnapshot(
+    string ProfileId,
+    string[] CompletedQuestIds,
+    string[] ActiveQuestIds,
+    string[] CompletedObjectiveIds);
 

@@ -26,8 +26,6 @@ public static class QuestTableLayoutRules
         _ => 20f,
     };
 
-    public static float ProgressTaskRowHeight(QuestTaskTextSize size) => CompactTaskRowHeight(size) + 10f;
-
     public static float RaidTrackedTaskFontSize(QuestTaskTextSize size) => TaskFontSize(size) - 1f;
 
     public static float RaidTrackedProgressFontSize(QuestTaskTextSize size) => TaskFontSize(size) - 2f;

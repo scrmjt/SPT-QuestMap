@@ -14,10 +14,10 @@ namespace SPTQuestMap.Routers;
 /// and per-profile completed-quest snapshots for whichever of them the player selects.
 ///
 /// Deliberately minimal, unlike <see cref="QuestMapClientStaticRouter"/>'s full topology feed:
-/// only completion is exposed here. The client already has the full topology locally and only
-/// needs to know which quests another profile has finished in order to compute chain progress
-/// and catch-up maps for itself - sending more would be someone else's profile data leaving
-/// the server for no reason.
+/// only two id lists per profile are exposed - what they have finished, and what they can act
+/// on right now. The client already has the full topology locally, so those two facts are
+/// enough for it to compute chain progress, catch-up and map suggestions itself. Anything
+/// beyond them would be someone else's profile data leaving the server for no reason.
 /// </summary>
 [Injectable]
 public sealed class QuestMapClientCoopRouter(
@@ -58,6 +58,23 @@ public sealed class QuestMapClientCoopRouter(
                             pair.State!.Quests
                                 .Where(quest => quest.DisplayState == "Completed")
                                 .Select(quest => quest.QuestId)
+                                .Distinct(StringComparer.Ordinal)
+                                .ToArray(),
+                            // What this profile could actually take into a raid today. Without
+                            // it the client can only ask "have they finished it", which counts
+                            // every level- and prerequisite-locked quest as outstanding.
+                            pair.State!.Quests
+                                .Where(quest => quest.DisplayState is "Available" or "InProgress" or "ReadyToFinish")
+                                .Select(quest => quest.QuestId)
+                                .Distinct(StringComparer.Ordinal)
+                                .ToArray(),
+                            // Which legs of a multi-map quest this profile has already done.
+                            // Without it a quest spanning four maps counts against all four
+                            // forever, even once three of them are finished.
+                            pair.State!.Quests
+                                .SelectMany(quest => quest.Objectives)
+                                .Where(objective => objective.Complete)
+                                .Select(objective => objective.ObjectiveId)
                                 .Distinct(StringComparer.Ordinal)
                                 .ToArray()))
                         .ToArray();

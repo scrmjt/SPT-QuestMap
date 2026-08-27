@@ -188,7 +188,11 @@ internal sealed class RaidTrackedQuestListView : MonoBehaviour, IDisposable
     {
         if (_panel is null || _content is null || _projection is null || _assetCache is null) return;
         var version = ++_contentVersion;
-        foreach (Transform child in _content) Destroy(child.gameObject);
+        foreach (Transform child in _content)
+        {
+            child.gameObject.SetActive(false);
+            Destroy(child.gameObject);
+        }
         try
         {
             var projection = _projection();
@@ -226,7 +230,11 @@ internal sealed class RaidTrackedQuestListView : MonoBehaviour, IDisposable
         catch (Exception exception)
         {
             _log?.LogError($"QUESTMAP_M06_RAID_TRACKED_LIST_ERROR {exception}");
-            foreach (Transform child in _content) Destroy(child.gameObject);
+            foreach (Transform child in _content)
+            {
+                child.gameObject.SetActive(false);
+                Destroy(child.gameObject);
+            }
             var y = 0f;
             AddTextRow("TrackedQuestListError", ClientLocale.Text("label.trackedQuestListFailed"), ref y, 30, 11,
                 TextAlignmentOptions.Center, new Color(0.86f, 0.45f, 0.38f, 1));
