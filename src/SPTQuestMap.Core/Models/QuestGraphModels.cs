@@ -439,3 +439,20 @@ public sealed record QuestEdgeRoute(
     QuestGraphPoint Control1,
     QuestGraphPoint Control2,
     QuestGraphPoint End);
+
+/// <summary>
+/// Roster entry for the in-game Coop views: who else is on this server, without any quest
+/// data attached. Kept separate from <see cref="CoopProfileSnapshot"/> so the client can
+/// list every profile cheaply and only fetch quest state for the ones actually selected.
+/// </summary>
+public sealed record CoopProfileSummary(string ProfileId, string Nickname, string Side, int Level);
+
+/// <summary>
+/// What one other profile has finished, for the in-game Coop views. Deliberately just
+/// completed-quest ids: the client already has the full topology locally (via the topology
+/// route) and only needs to know what another profile has finished to work out chain
+/// progress and catch-up maps for itself. Sending anything more would be someone else's
+/// profile data leaving the server for no reason.
+/// </summary>
+public sealed record CoopProfileSnapshot(string ProfileId, string[] CompletedQuestIds);
+
