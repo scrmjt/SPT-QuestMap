@@ -40,6 +40,21 @@ behind the Tasks list.
 its own kind. Grep for the other view's field before adding a new `Rebuild*` method. The
 asymmetry is invisible in code review precisely because each method looks correct on its own.
 
+## 1c. The view mode is persisted BY NAME, so removing one strands a saved setting
+
+`GlobalTasksGraphSettingsStore` round-trips the mode through `Enum.TryParse` on
+`settings.Mode.ToString()`. Deleting or renaming a `GlobalQuestGraphMode` member therefore
+does not just change code - it orphans every setting an earlier build wrote.
+
+When the two Coop tabs were merged into one, `CoopCatchUp` and `CoopMapSuggestions` were kept
+in the enum purely so an old saved value still parses, and `NormalizeMode` folds them onto
+`Coop` immediately after `LoadSettings()`. Without that fold the restored mode is one no tab
+binds to any more: `IsCoopMode` is true so a Coop view builds, but no tab renders as active,
+and the tab that would return you to it does not exist.
+
+**Rule:** add a mode freely; never remove one. Fold retired modes onto their replacement at
+load, and keep the old member with a comment saying why it survives.
+
 ## 2. `Destroy()` is deferred to the end of the frame — `SetActive(false)` first
 
 Rows in these views are **absolutely positioned**, not laid out by a layout group. A

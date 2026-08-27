@@ -354,6 +354,11 @@ public enum GlobalQuestGraphMode
     // server. They only ever reach the two binary (InProgress vs Full) checks scattered
     // through the graph-building code by falling through to the Full-shaped default, which
     // is harmless since that code never actually runs for them.
+    // The single merged Coop view. It renders the catch-up sections and the map
+    // suggestions side by side, so the two older modes below are kept only so a
+    // persisted setting written by an earlier build still parses - the mode string is
+    // round-tripped by name. Both normalise to Coop on load.
+    Coop,
     CoopCatchUp,
     CoopMapSuggestions,
 }

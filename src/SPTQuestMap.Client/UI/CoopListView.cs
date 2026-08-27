@@ -30,6 +30,7 @@ internal sealed class CoopListView : IDisposable
     private const float SectionPadding = 6f;
     private const float SideInset = 10f;
     private const float DefaultValueColumnWidth = 64f;
+    private const float ColumnGap = 8f;
 
     private readonly RectTransform _content;
     private readonly ManualLogSource _log;
@@ -120,12 +121,34 @@ internal sealed class CoopListView : IDisposable
     /// enough that the InProgress table's cache-and-diff approach would be effort spent on a
     /// path that is not actually hot.
     /// </summary>
+    /// <summary>
+    /// Renders one column of sections. Callers that have two groups of sections use
+    /// <see cref="SetColumns"/> instead, which is the normal case for the merged Coop view.
+    /// </summary>
     public void SetSections(IReadOnlyList<CoopSection> sections, string emptyMessage,
+        float valueColumnWidth = DefaultValueColumnWidth) =>
+        SetColumns(sections, [], emptyMessage, valueColumnWidth);
+
+    /// <summary>
+    /// Renders two independent stacks of sections side by side.
+    ///
+    /// The Coop view is a list of short rows on a full-width screen, so a single column left
+    /// most of the surface empty. Each column lays its own sections out top-down and the
+    /// scrolling content is sized to the taller of the two, so they scroll together rather
+    /// than each getting a scrollbar.
+    ///
+    /// Passing an empty right column falls back to a single full-width column, which is what
+    /// the empty-state and any future single-list caller want.
+    /// </summary>
+    public void SetColumns(
+        IReadOnlyList<CoopSection> left,
+        IReadOnlyList<CoopSection> right,
+        string emptyMessage,
         float valueColumnWidth = DefaultValueColumnWidth)
     {
         ClearContent();
 
-        if (sections.Count == 0)
+        if (left.Count == 0 && right.Count == 0)
         {
             var empty = UnityUiFactory.CreateListRow("Empty", _content, top: 10, height: 40, left: 8, right: 8);
             var text = UnityUiFactory.AddText(empty.gameObject, emptyMessage, 12, TextAlignmentOptions.TopLeft,
@@ -135,6 +158,48 @@ internal sealed class CoopListView : IDisposable
             return;
         }
 
+        float height;
+        if (right.Count == 0)
+        {
+            height = RenderColumn(_content, left, valueColumnWidth);
+        }
+        else
+        {
+            var leftColumn = CreateColumn("ColumnLeft", 0f, 0.5f, leftEdge: 0f, rightEdge: ColumnGap / 2f);
+            var rightColumn = CreateColumn("ColumnRight", 0.5f, 1f, leftEdge: ColumnGap / 2f, rightEdge: 0f);
+            var leftHeight = RenderColumn(leftColumn, left, valueColumnWidth);
+            var rightHeight = RenderColumn(rightColumn, right, valueColumnWidth);
+            height = Math.Max(leftHeight, rightHeight);
+            // The columns are anchored to the content's top edge and stretched horizontally,
+            // so only their height needs setting - and both get the full height so neither
+            // clips its own sections.
+            leftColumn.offsetMin = new Vector2(leftColumn.offsetMin.x, -height);
+            rightColumn.offsetMin = new Vector2(rightColumn.offsetMin.x, -height);
+        }
+
+        _content.sizeDelta = new Vector2(0, height);
+        Canvas.ForceUpdateCanvases();
+    }
+
+    /// <summary>
+    /// A half-width child of the content rect. Stretched horizontally between two fractional
+    /// anchors, so the sections inside can keep using <see cref="UnityUiFactory.CreateListRow"/>
+    /// and stretch to the column rather than to the whole surface.
+    /// </summary>
+    private RectTransform CreateColumn(string name, float anchorLeft, float anchorRight, float leftEdge, float rightEdge)
+    {
+        var column = UnityUiFactory.CreateRect(name, _content);
+        column.anchorMin = new Vector2(anchorLeft, 1);
+        column.anchorMax = new Vector2(anchorRight, 1);
+        column.pivot = new Vector2(0.5f, 1);
+        column.offsetMin = new Vector2(leftEdge, 0);
+        column.offsetMax = new Vector2(-rightEdge, 0);
+        return column;
+    }
+
+    /// <summary>Lays sections out top-down inside <paramref name="parent"/>; returns the height used.</summary>
+    private float RenderColumn(RectTransform parent, IReadOnlyList<CoopSection> sections, float valueColumnWidth)
+    {
         var y = 4f;
         for (var index = 0; index < sections.Count; index++)
         {
@@ -143,7 +208,9 @@ internal sealed class CoopListView : IDisposable
                 + (section.Subtitle is null ? 0 : SubtitleHeight)
                 + section.Rows.Count * RowHeight
                 + SectionPadding * 2;
-            var sectionRoot = UnityUiFactory.CreateListRow($"Section-{index}", _content, y, sectionHeight, left: 4, right: 4);
+            // Named by index, not by the running offset: a float-derived name is unstable and
+            // can collide.
+            var sectionRoot = UnityUiFactory.CreateListRow($"Section-{index}", parent, y, sectionHeight, left: 4, right: 4);
             sectionRoot.gameObject.AddComponent<Image>().color = new Color(0.10f, 0.12f, 0.125f, 0.9f);
 
             var rowY = SectionPadding;
@@ -195,8 +262,7 @@ internal sealed class CoopListView : IDisposable
             y += sectionHeight + SectionGap;
         }
 
-        _content.sizeDelta = new Vector2(0, y);
-        Canvas.ForceUpdateCanvases();
+        return y;
     }
 
     /// <summary>

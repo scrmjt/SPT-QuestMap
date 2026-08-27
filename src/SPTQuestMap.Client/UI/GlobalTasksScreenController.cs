@@ -170,6 +170,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _layout = layout;
         _overlay = overlay;
         LoadSettings();
+        _mode = NormalizeMode(_mode);
         if (InRaidQuestContext.TryCapture(out var raidContext))
         {
             _raidInProgressOnly = true;
@@ -518,7 +519,18 @@ internal sealed class GlobalTasksScreenController : IDisposable
     }
 
     private static bool IsCoopMode(GlobalQuestGraphMode mode) =>
-        mode is GlobalQuestGraphMode.CoopCatchUp or GlobalQuestGraphMode.CoopMapSuggestions;
+        mode is GlobalQuestGraphMode.Coop
+            or GlobalQuestGraphMode.CoopCatchUp
+            or GlobalQuestGraphMode.CoopMapSuggestions;
+
+    /// <summary>
+    /// The two Coop views were merged into one two-column screen. A setting persisted by an
+    /// earlier build still names one of the old modes, and the mode is round-tripped by name,
+    /// so it has to be folded onto the merged mode on load - otherwise the tab bar highlights
+    /// nothing and the view builds against a mode no tab can return to.
+    /// </summary>
+    private static GlobalQuestGraphMode NormalizeMode(GlobalQuestGraphMode mode) =>
+        IsCoopMode(mode) ? GlobalQuestGraphMode.Coop : mode;
 
     /// <summary>
     /// Whether the LOCAL profile has finished a quest, resolved the same way every other
@@ -770,12 +782,14 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private void RefreshCoopContent()
     {
         if (_coopView is null || _topology is null || _overlay is null) return;
-        var sections = _mode == GlobalQuestGraphMode.CoopCatchUp
-            ? BuildCoopCatchUpSections()
-            : BuildCoopMapSuggestionSections();
+        // One screen, two columns: catch-up on the left, where-to-raid on the right. They
+        // answer different questions over the same selection, and the single-column layout
+        // left most of a full-width screen empty.
+        var catchUp = BuildCoopCatchUpSections();
+        var maps = BuildCoopMapSuggestionSections();
         var emptyKey = _coopSelectedProfileIds.Count == 0 ? "label.coopPickPlayers" : "label.coopNoDataYet";
         // Both Coop views print short phrases, not bare counts, in the value column.
-        _coopView.SetSections(sections, ClientLocale.Text(emptyKey), valueColumnWidth: 132f);
+        _coopView.SetColumns(catchUp, maps, ClientLocale.Text(emptyKey), valueColumnWidth: 132f);
     }
 
     /// <summary>
@@ -813,12 +827,13 @@ internal sealed class GlobalTasksScreenController : IDisposable
                 .Take(12)
                 .Select(entry => new CoopRow(
                     entry.SeriesName,
-                    // "6 vs 0 of 25" reads; two bare fractions joined by a middot did not - the
-                    // denominator is the same on both sides, so printing it twice was noise.
-                    ClientLocale.Format("label.coopChainProgressValue",
-                        ClientLocale.Arg("you", entry.PrimaryFurthest.ToString()),
-                        ClientLocale.Arg("them", entry.ComparisonFurthest.ToString()),
-                        ClientLocale.Arg("total", entry.TotalParts.ToString())),
+                    // State the gap, not the raw positions. "5 vs 1 of 6" is three numbers and
+                    // reads as a three-way comparison even with a single teammate selected; the
+                    // question this answers is only ever "how far apart are we on this chain",
+                    // and the section title already names who 'behind' is measured against.
+                    ClientLocale.Format(
+                        entry.PrimaryFurthest < entry.ComparisonFurthest ? "label.coopChainBehind" : "label.coopChainAhead",
+                        ClientLocale.Arg("count", Math.Abs(entry.PrimaryFurthest - entry.ComparisonFurthest).ToString())),
                     entry.PrimaryFurthest < entry.ComparisonFurthest ? new Color(0.85f, 0.62f, 0.32f, 1f) : (Color?)null))
                 .ToArray();
             if (seriesRows.Length > 0)
@@ -826,7 +841,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
                 sections.Add(new CoopSection(
                     ClientLocale.Format("label.coopChainProgressFor", ClientLocale.Arg("profile", nickname)),
                     seriesRows,
-                    ClientLocale.Text("label.coopChainProgressSubtitle")));
+                    ClientLocale.Format("label.coopChainProgressSubtitle", ClientLocale.Arg("profile", nickname))));
             }
 
             // Catch-up maps: quests they finished, I have not, and I can actually take -
@@ -1340,12 +1355,9 @@ internal sealed class GlobalTasksScreenController : IDisposable
         AddHeaderButton(header, "QuestMapTab", ClientLocale.Text("label.questMap"), 130, -4, 100,
             _mode == GlobalQuestGraphMode.Full, () => ShowMode(GlobalQuestGraphMode.Full), enabled: !_raidInProgressOnly,
             tooltip: _mode == GlobalQuestGraphMode.Full ? null : () => ClientLocale.Text("tooltip.openQuestMap"));
-        AddHeaderButton(header, "CoopCatchUpTab", ClientLocale.Text("label.coopCatchUp"), 236, -4, 118,
-            _mode == GlobalQuestGraphMode.CoopCatchUp, () => ShowMode(GlobalQuestGraphMode.CoopCatchUp), enabled: !_raidInProgressOnly,
-            tooltip: _mode == GlobalQuestGraphMode.CoopCatchUp ? null : () => ClientLocale.Text("tooltip.openCoopCatchUp"));
-        AddHeaderButton(header, "CoopMapTab", ClientLocale.Text("label.coopMapSuggestions"), 360, -4, 140,
-            _mode == GlobalQuestGraphMode.CoopMapSuggestions, () => ShowMode(GlobalQuestGraphMode.CoopMapSuggestions), enabled: !_raidInProgressOnly,
-            tooltip: _mode == GlobalQuestGraphMode.CoopMapSuggestions ? null : () => ClientLocale.Text("tooltip.openCoopMapSuggestions"));
+        AddHeaderButton(header, "CoopTab", ClientLocale.Text("label.coop"), 236, -4, 118,
+            IsCoopMode(_mode), () => ShowMode(GlobalQuestGraphMode.Coop), enabled: !_raidInProgressOnly,
+            tooltip: IsCoopMode(_mode) ? null : () => ClientLocale.Text("tooltip.openCoop"));
     }
 
     private void BuildGlobalChrome()
