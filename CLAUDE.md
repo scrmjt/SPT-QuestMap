@@ -18,6 +18,7 @@ Everything else is one hop away — load exactly one thing from the table below.
 | Client↔server protocol, plugin data flow | `docs/bepinex-client-notes.md` (sectioned — read the section) |
 | A client-facing string | `docs/client-localization.md` |
 | **"Where did we leave off?"** | `docs/STATE.md` |
+| **"What should we build next?"** | `docs/roadmap.md` |
 | Anything else in `docs/` | `docs/INDEX.md` — **never browse `docs/` directly**, it is 250 KB and half of it is historical |
 | Headed for an upstream PR | `AGENTS.md` — upstream's contract (source-first rule, register new `.csproj`, maintain `docs/development-status.md`) |
 

@@ -82,6 +82,9 @@ finished" — a plausible-looking wrong answer, not an error.
 
 ### Known limits
 
+These are limits of what is built, not planned work — planned work is in
+`roadmap.md`, which also carries the open questions each item still needs answered.
+
 - Never validated with **more than two profiles**, or with profiles at very different levels.
 - Chain depth ignores cross-trader prerequisite chains (see `domain-rules.md` §3).
 - Only ~30% of quests belong to a named series, so the rest appear only in trader gaps.

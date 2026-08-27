@@ -1,6 +1,6 @@
 # Development status — current operational handoff
 
-> Last consolidated: 2026-08-19. This is a current-state handoff for Codex, not an append-only development diary.
+> Last consolidated: 2026-08-27. This is a current-state handoff, not an append-only development diary.
 >
 > **Maintenance rule:** update existing sections in place. Keep at most 8 short entries under **Final M8 changes**. Do not accumulate old PIDs, superseded hashes, screenshot-by-screenshot refinements, or full implementation narratives here. Git history and the archived long status are the source for archaeology.
 
@@ -12,10 +12,10 @@
 - **Scope:** the 2.0 feature scope is complete and remains frozen at the server-authoritative multi-map/task-location integration. Further 2.0 work is maintenance: verified regressions, compatibility corrections, and release servicing only. New feature work belongs in a separately approved post-2.0 scope.
 - **Blockers:** none.
 - **Next work:** no M8 or `ingame-ui` milestone work remains. Future work begins from `main` as post-2.0 maintenance or as a separately scoped compatibility/feature milestone.
-- **Post-2.0 in progress:** `catch-up-planner` branch adds the browser-only Compare Mode catch-up planner (trader gaps + shared-map ranking). Server/browser only; the native client and 2.0 release artifacts are untouched. See **Catch-up planner** under *Accepted browser behavior*.
-- **Current validation:** zero compiler warnings/errors; **99/99 shared-core tests** and **177/177 server/browser tests**.
+- **Post-2.0 in progress:** catch-up and co-op planning, now spanning both surfaces — the browser Compare Mode panel and the native client's Coop Maps / Coop Catch Up tabs. Release artifacts are untouched and the 2.0 scope remains frozen; this is unmerged fork work pending separately approved post-2.0 scope. See **Catch-up and co-op planning** under *Accepted browser behavior*.
+- **Current validation:** zero compiler warnings/errors; **160 shared-core tests** and **195 server/browser tests** (355 total). `dotnet test src/SPTQuestMap/SPTQuestMap.slnx -c Release` builds all five projects and runs both suites.
 - **Current combined package:** `artifacts/release/SPT-QuestMap-2.0.0.zip`, 15 entries / 12 files, 832,549 bytes, SHA-256 `4C48F8B2C3D269F7116F2DD2A4EACA7DE3F1FA3BB398BACCD8C9ABDA7665BFA1`. Root inspection found zero escaping files, zero `.js`/`.ts` files, and only the four expected QuestMap project DLL entries. Package DLLs are client `CE60E9E5085530E80716372E75278431F157F8F2954C0EDBF374138ADE23D894` and server `7FD6993486F71A306C94479361921E2C1C7103DEF6E55C2C00C81F5DDA104BAB`.
-- **Last recorded automated deployment state:** the installed client/client Core were hash-matched at `CBE22CCCE45BD3FCE09855BDD01DE59B00E345A2B14557EC1D453F8F170FF209` and `4F3FC21968C4B40A17A957D0863A8D02840F25FA2A7FF40B723A442796B3E8FC`. The installed server DLL/Core remained `DFF278CE60F050070EC7C374C705BC86B15748F50CA53FB00C96DE8A367F6AF8` and `27724B9DC9A8E3A551B155A5205909D8ED59BCE42580B6829B4B4B5BD794C66D` because no restart command was supplied. This records the last automated local deployment only; the combined artifact above is the final M8 release evidence.
+- **Last recorded automated deployment state:** superseded. Hashes are re-derived by `deploy.ps1` on every run; do not record them here.
 
 Every source-changing 2.0 maintenance slice must create a **fresh** combined archive with `scripts/package-release.ps1 -Target Both`; record entry/file count, byte size, SHA-256, and root-containment inspection. Never cite an archive generated before the latest source change.
 
@@ -135,11 +135,13 @@ Rules:
 - Sanitized rich text supports the accepted safe HTML/Tarkov tag set; executable/embedded markup and event attributes are rejected.
 - `/questmap` remains intentionally unauthenticated and is safe only within the documented bind/exposure boundary.
 
-### Catch-up planner (post-2.0 addition, browser only)
+### Catch-up and co-op planning (post-2.0)
 
-A Compare Mode side panel that answers two co-op questions. Both parts are pure logic in
-`SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`, `QuestChainDepthCalculator`), projected by
-`QuestMapPageState`; the native client is unchanged.
+Answers the co-op questions "what is my partner ahead of me on" and "where should we raid
+together". Pure logic lives in `SPTQuestMap.Core` (`CatchUpRules`, `SharedMapRules`,
+`PoolCatchUpRules`, `QuestSeriesRules`, `QuestObjectiveMapRules`, `QuestChainDepthCalculator`)
+and is projected by `QuestMapPageState` for the browser and served to the native client over
+`/questmap/client/*`. Both surfaces consume the same rules; neither owns them.
 
 - **Trader gaps.** Per trader, the quests the comparison profile has completed and the primary
   profile has not, ranked by that missing count, listing the nearest ones by chain depth first.
@@ -156,6 +158,35 @@ A Compare Mode side panel that answers two co-op questions. Both parts are pure 
   applicable quest, because that breakdown is what the filter is chosen from.
 - Panel expansion and map filter persist in browser storage; a restored filter naming a map absent
   from the loaded profile pair is dropped rather than silently yielding an empty, unshowable filter.
+
+Added since the first catch-up slice:
+
+- **A quest counts only against the maps it still needs.** A quest's map list is the union of its
+  *objectives'* locations, and objectives complete independently, so a multi-map quest must drop
+  off a map once that player has finished the leg there — otherwise "Needle in a Haystack" reads
+  as outstanding work on all four of its maps when only Streets remains. `OutstandingMaps`
+  (browser) and `QuestObjectiveMapRules.OutstandingTaskLocations` (client) answer this; the
+  node's full map list still answers "which maps does this quest mention", which is the right
+  answer for filters and badges. Both fall back to the unfiltered list when there is no
+  per-objective progress to refine with, so a data gap cannot drop a quest off every map.
+- **Co-op map helper over an N-profile pool.** `PoolCatchUpRules` derives roles per chain, so the
+  same profile can lead one chain and trail another. The pool is separate from the pairwise
+  primary/comparison pair, which stays two-way because the graph draws exactly two status lanes.
+  "All" means every selected profile still needs the map, so a shared count can legitimately be
+  lower than the per-profile columns suggest.
+- **Multi-select trader and map filters**, where an empty set means unfiltered and a populated set
+  is a union. The pre-existing singular `TraderFilter`/`MapFilter` settings fields stay strings —
+  widening them would throw `JsonException` against stored settings and silently wipe every saved
+  preference for every existing user.
+- **Level filter as a cap** on the quest's own declared requirement rather than a per-profile gate
+  check, which had filtered nothing at all in a mixed-level comparison.
+- **Quest series progress** (Gunsmith, Spa Tour…), grouped by the *shape* of a localized quest
+  name rather than the English word "Part" — Russian uses a period, `Оружейник. Часть 1`. The
+  pattern was validated against all 17 installed locales.
+- **Native Coop Maps and Coop Catch Up tabs** in the in-game client, fed by
+  `CoopProfileSnapshot`. These need its `ActiveQuestIds` and `CompletedObjectiveIds`, so client
+  and server must be deployed together; an older server leaves them null, which reads on screen
+  as "no maps shared" rather than as an error.
 
 ## Accepted native Tasks behavior
 
@@ -276,44 +307,38 @@ scripts/package-release.ps1 -Target Both -Configuration Release -Version 2.0.0
 
 ## Final M8 acceptance record
 
-The user accepted the integrated 2.0 in-game UI and closed M8 on 2026-08-19. The following uncommon or environment-dependent cases remain useful post-release smoke/regression coverage, but they are not unfinished milestone work or known blockers:
-
-1. **Task-location semantics:** live Safe Corridor must retain Reserve while excluding Arena; Chemical - Part 1 must not show duplicate Customs; Work Smarter must not inherit Labyrinth from its ambiguous `exit777` zone. Confirm `Out of Raid` labels/tooltips and stable `no-location` transport behavior.
-2. **Mixed scopes:** verify one quest containing concrete map + Any + Out of Raid across global table membership, objective visibility, omission summary, headers, and tracked raid list.
-3. **Transition:** verify native/web detail and table headers show Transition first with one or multiple derived concrete maps without altering filter/raid data.
-4. **Tasks interactions:** confirm the current single-click selection/detail contract, background clear, action controls, map isolate/include behavior, Reset defaults, trader-strip refresh, and new-raid reset versus same-raid resume preservation.
-5. **Localization/layout:** validate Russian fixed-control fitting, Out of Raid translations, long badges, repeatable exploration/elimination wording, and the separate in-raid text-size presets.
-6. **Preload/compatibility:** confirm one `QUESTMAP_M02_PRELOAD` after main-menu readiness, `resolved=4/4; installedPatches=4`, no old main-menu Harmony interaction, and no conflict with the reported repair patch.
-7. **Native lifecycle/actions:** recheck Fika handover/turn-in, post-raid details reopening, one-second duplicate-press rejection, hidden-host cleanup, the mandatory post-raid topology refresh after repeatables change during a raid, and the manual F12 force-reload action.
-8. **Modded content:** opportunistically validate WTT Doom Arcade Salvage/Block and Content Backport Prestige templates on installations that actually contain them.
-
-M8 closure retained the successful combined build/test/package evidence above. Future releases should reuse this matrix proportionally to the affected code instead of reopening the completed milestone.
+The user accepted the integrated 2.0 in-game UI and closed M8 on 2026-08-19, with no
+outstanding milestone work or known blockers. The eight uncommon/environment-dependent cases
+that remain useful as post-release smoke coverage live in `docs/acceptance.md`; reuse them
+proportionally to the affected code rather than reopening the completed milestone.
 
 ## Final M8 changes
 
-Keep this list short and replace/collapse older entries instead of extending it indefinitely.
+At most 8 short entries. Replace or collapse older ones instead of extending the list.
 
-- Raid exit now schedules one retry-safe, coalesced server-topology reload; the F12 Diagnostics section also exposes that full reload manually for stale/missing native data without an EFT restart.
-- New-raid identity includes canonical map plus EFT quest controller, so every new raid restores raid filter defaults even on the same map while same-raid suspend/resume preserves the user's filters.
-- Task-map aliases are canonicalized before deduplication, preventing Mongo/internal aliases from producing duplicate map banners such as Customs/Customs; quest-item spawn inference retains `MongoId` keys end-to-end and parallelizes independent location materialization before a deterministic merge.
-- Quest details now preserve the server's dependency-aware objective order, and both browser/native details transport and render SPT `Fail` rewards as a distinct **Penalties for failure** section below success rewards.
-- Accept/restart, turn-in, and objective hand-in share a one-second cross-surface press guard and matching temporary control disablement; repeatable replacement remains outside it.
-- Server-authoritative per-objective relevance/task scopes and finalized Any/Transition/mixed-map semantics drive every browser/native filter, task, tracking, and raid surface; the hotkey raid list uses full available screen height and current-map-first/Any-second task bands without splitting mixed-scope quests.
-- Main-menu warm-up and server topology construction were hardened against visible first-open delay and large-modded-graph regressions; Russian/fixed-width localization and raid text sizing were also stabilized.
-- Failed one-session objectives now reset stale native completion through EFT's initialized checker/controller before they can be skipped again; a narrowly stuck `Started` quest whose necessary conditions are all effectively complete can replay one satisfied condition before the ordinary native Turn In flow. Trader Tasks also retains already-started, hand-in-ready, and restartable quests after an exact-status start prerequisite advances beyond the status that originally unlocked them. Compatibility hardening otherwise retains WTT, prestige/external gates, malformed mod data, Arena exclusion, and **Out of Raid** presentation.
+- Raid exit schedules one retry-safe coalesced topology reload; F12 Diagnostics exposes it
+  manually for stale native data without an EFT restart.
+- New-raid identity includes canonical map plus EFT quest controller, so raid filter defaults
+  reset on every new raid while same-raid suspend/resume preserves the user's filters.
+- Task-map aliases are canonicalized before deduplication, preventing duplicate map banners;
+  quest-item spawn inference keeps `MongoId` keys end-to-end.
+- Quest details preserve the server's dependency-aware objective order, and both surfaces render
+  SPT `Fail` rewards as a distinct **Penalties for failure** section.
+- Accept/restart, turn-in and objective hand-in share a one-second cross-surface press guard.
+- Server-authoritative per-objective relevance and Any/Transition/mixed-map semantics drive every
+  filter, task, tracking and raid surface on both surfaces.
+- Main-menu warm-up and topology construction were hardened against first-open delay and
+  large-modded-graph regressions; Russian/fixed-width localization and raid text sizing stabilized.
+- Failed one-session objectives reset stale native completion before they can be skipped again;
+  Trader Tasks retains started, hand-in-ready and restartable quests after a start prerequisite
+  advances past the status that unlocked them.
 
 ## Milestone summary
 
-- **Web M0–M4 / 1.3 baseline:** exact SPT integration, sanitized topology/profile model, Canvas graph, localization, acceptance fixes, repeatables, rewards, summaries, and difference-first profile comparison. Complete.
-- **Client M0:** exact installed-client investigation and hierarchy/action tracing. Complete.
-- **Client M1:** exact-version project/compatibility harness and safe-disable behavior. Complete.
-- **Client M2:** shared graph model, complete read-only topology feed, live overlay adapter, observation hooks. Complete.
-- **Client M3:** trader graph vertical slice proving native detail bridge; later superseded by the shared production workspace. Complete.
-- **Client M4:** native action ownership and event-driven reactive updates, including viewport/selection preservation. Complete.
-- **Client M5:** shared core and production pooled/batched graph renderer. Complete.
-- **Client M6:** global replacement, Tasks table, filters, pinning/tracking, retained screen lifecycle, targeted raid monitor, notifications, and tracked list. Complete and accepted.
-- **Client M7:** reusable details/native actions, transaction reconciliation, repeatable deltas, trader full workspace, relevant items/Wiki/Flea, and final interaction polish. Complete and accepted.
-- **M8:** stabilization, multi-map/task-scope finalization, compatibility fixes, performance, validation, and release hardening. Complete and user-accepted on 2026-08-19; `ingame-ui` is merged into `main`.
+Web M0–M4 (the 1.3 browser baseline) and client M0–M8 are all complete and user-accepted;
+`ingame-ui` merged into `main` on 2026-08-19 as the completed 2.0 in-game implementation.
+Per this document's maintenance rule, the per-milestone breakdown is archaeology and lives in
+git history and `docs/archive/development-status.md` rather than here.
 
 ## Superseded designs — do not resurrect
 
@@ -337,6 +362,8 @@ Keep this list short and replace/collapse older entries instead of extending it 
 Use these for detail rather than expanding this status again:
 
 - `AGENTS.md` — repository working rules.
+- `docs/roadmap.md` — post-2.0 work not yet started, with the open questions each item needs
+  answered. Fork-local; exclude from upstream PRs.
 - `docs/in-game-client-design.md` — exact client targets, signatures, hashes, and hierarchy evidence.
 - `docs/acceptance.md` — acceptance matrix/history.
 - `docs/quest-actions-plan.md` — server-only action design audit; native client now owns actual live actions.

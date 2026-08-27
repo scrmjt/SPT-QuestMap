@@ -24,6 +24,7 @@ Files are marked:
 | working on the **client↔server protocol** or client data flow | `bepinex-client-notes.md` |
 | adding a **client-facing string** | `client-localization.md` |
 | asking **"where did we leave off"** | `STATE.md` |
+| asking **"what next"**, or picking up planned work | `roadmap.md` |
 | **building, deploying, or cycling the server** | root `CLAUDE.md` — it has the commands |
 
 If none of these match, the question is probably answered by the code. Grep first.
@@ -36,7 +37,8 @@ If none of these match, the question is probably answered by the code. Grep firs
 
 | File | Size | What it is |
 | --- | --- | --- |
-| `STATE.md` | 4 K | Where the work stands, what is unverified, what is next. **The handoff file.** |
+| `STATE.md` | 5 K | Where the work stands, what is unverified, what is committed. **The handoff file.** |
+| `roadmap.md` | 7 K | Work not yet started, with the open questions each item needs answered. Headline item: reading the co-op roster from Fika. |
 | `domain-rules.md` | 11 K | Quest-state, filter, ranking, series and objective rules that must not be "simplified" back. Covers both UIs. |
 | `client-ui-invariants.md` | 13 K | Unity rules that compile fine and fail on screen. Read before touching `SPTQuestMap.Client/UI/`. |
 | `web-ui-invariants.md` | 7 K | Blazor/CSS/Razor equivalents. Read before touching `SPTQuestMap/Presentation/`. |

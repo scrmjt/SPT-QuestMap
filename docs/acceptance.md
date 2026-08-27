@@ -106,3 +106,19 @@ Status reflects the user's browser reviews through 2026-08-04. The installed SPT
 5. The status stripe and body share one unified outer quest-box geometry. Ordinary card borders are removed; selection, chain, and hover highlights draw a single outer border around the complete card.
 6. Recursive prerequisite/direct-successor selection highlights use the unified outer border and are reset/recomputed on every selection.
 7. Hover highlights direct predecessor/successor nodes and their connecting edges.
+
+## Final M8 acceptance record (moved from docs/development-status.md)
+
+The user accepted the integrated 2.0 in-game UI and closed M8 on 2026-08-19. The following uncommon or environment-dependent cases remain useful post-release smoke/regression coverage, but they are not unfinished milestone work or known blockers:
+
+1. **Task-location semantics:** live Safe Corridor must retain Reserve while excluding Arena; Chemical - Part 1 must not show duplicate Customs; Work Smarter must not inherit Labyrinth from its ambiguous `exit777` zone. Confirm `Out of Raid` labels/tooltips and stable `no-location` transport behavior.
+2. **Mixed scopes:** verify one quest containing concrete map + Any + Out of Raid across global table membership, objective visibility, omission summary, headers, and tracked raid list.
+3. **Transition:** verify native/web detail and table headers show Transition first with one or multiple derived concrete maps without altering filter/raid data.
+4. **Tasks interactions:** confirm the current single-click selection/detail contract, background clear, action controls, map isolate/include behavior, Reset defaults, trader-strip refresh, and new-raid reset versus same-raid resume preservation.
+5. **Localization/layout:** validate Russian fixed-control fitting, Out of Raid translations, long badges, repeatable exploration/elimination wording, and the separate in-raid text-size presets.
+6. **Preload/compatibility:** confirm one `QUESTMAP_M02_PRELOAD` after main-menu readiness, `resolved=4/4; installedPatches=4`, no old main-menu Harmony interaction, and no conflict with the reported repair patch.
+7. **Native lifecycle/actions:** recheck Fika handover/turn-in, post-raid details reopening, one-second duplicate-press rejection, hidden-host cleanup, the mandatory post-raid topology refresh after repeatables change during a raid, and the manual F12 force-reload action.
+8. **Modded content:** opportunistically validate WTT Doom Arcade Salvage/Block and Content Backport Prestige templates on installations that actually contain them.
+
+M8 closure retained the successful combined build/test/package evidence above. Future releases should reuse this matrix proportionally to the affected code instead of reopening the completed milestone.
+
