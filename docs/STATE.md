@@ -4,7 +4,8 @@
 is merely built. It is the fork's handoff file — the churny facts live here so root `CLAUDE.md`
 can stay small and stable.
 
-**Last updated: 2026-08-27.** Branch `llama-filters-refactor`, last commit `033e514`.
+**Last updated: 2026-08-27.** Branch `llama-filters-refactor`. Run `git log --oneline -3` for
+where the tip actually is.
 
 ---
 
@@ -42,7 +43,7 @@ Two commits on `llama-filters-refactor`, tree clean:
 
 - `88759a9` — the multi-map objective fix in both UIs, the coop snapshot fields, the Unity
   tab-bar and disposal fixes, the `ru.json` repair, and four new/extended test files.
-- `033e514` — this docs restructure.
+- the commit that added this file — the docs restructure.
 
 **Nothing has been pushed anywhere.**
 
