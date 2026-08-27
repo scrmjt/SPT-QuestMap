@@ -38,7 +38,7 @@ If none of these match, the question is probably answered by the code. Grep firs
 | File | Size | What it is |
 | --- | --- | --- |
 | `STATE.md` | 5 K | Where the work stands, what is unverified, what is committed. **The handoff file.** |
-| `roadmap.md` | 7 K | Work not yet started, with the open questions each item needs answered. Headline item: reading the co-op roster from Fika. |
+| `roadmap.md` | 7 K | Work not yet started, with the open questions each item needs answered. Headline item: seeing a co-op partner's quests in raid. |
 | `domain-rules.md` | 11 K | Quest-state, filter, ranking, series and objective rules that must not be "simplified" back. Covers both UIs. |
 | `client-ui-invariants.md` | 13 K | Unity rules that compile fine and fail on screen. Read before touching `SPTQuestMap.Client/UI/`. |
 | `web-ui-invariants.md` | 7 K | Blazor/CSS/Razor equivalents. Read before touching `SPTQuestMap/Presentation/`. |

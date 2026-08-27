@@ -9,86 +9,105 @@ Items are ordered by value, not by sequence. Nothing here is committed to a rele
 
 ---
 
-## 1. See your current co-op partners' quest progress
+## 1. See your co-op partner's quests — in raid
 
-**The goal:** when you are in a Fika session with other players, QuestMap should already know who
-they are and show their quest progress, instead of making you pick profiles from a list by hand.
+**The goal:** while you are in a raid with someone, see what quests *they* are working on here,
+so you can help each other instead of each running your own errands.
 
-### What already works
+### Why this is smaller than it sounds
 
-Most of this is built. The pieces are:
+Almost all of it is already built, and the part people assume is hard mostly is not.
 
 | Piece | State |
 | --- | --- |
-| Reading every profile's quests | **Done.** The server enumerates them via `SaveServer.GetProfiles()`. |
-| Shipping N profiles to the client | **Done.** `CoopProfileSnapshot` over `/questmap/client/*`. |
-| Showing N profiles' progress in game | **Done.** The Coop Maps and Coop Catch Up tabs. |
-| Showing N profiles' progress in the browser | **Done.** The Coop Map Helper. |
-| Knowing *which* profiles are your partners | **Missing.** You select the pool by hand. |
+| Reading every profile's quests | **Done** — server enumerates via `SaveServer.GetProfiles()` |
+| Fetching partner snapshots from the client | **Done** — `NativeCoopDataSource.LoadSnapshotsAsync` |
+| Knowing which objectives are outstanding *on this map* | **Done** — `QuestObjectiveMapRules` |
+| An in-raid list with map-aware bands | **Done** — `RaidQuestRuntime` + `RaidTrackedQuestListView` |
+| Knowing the current map in raid | **Done** — `InRaidQuestContext` |
+| Showing a *partner's* rows in that list | **Missing** |
+| Knowing who your partners are | **Missing** — you pick the pool by hand |
 
-So this is **not** a data or display feature. It is a *roster* feature: auto-populate the co-op
-pool from the live session. That is a much smaller change than it first appears, and most of the
-risk sits in one dependency.
+**What your partner's quests *are* is static during a raid.** Quests are accepted at traders,
+between raids. So the whole list can be fetched once, at raid start, and stay correct for the
+duration — no syncing, no polling, no Fika.
 
-### The constraint that shapes the design
+### What is and is not available in raid
 
-**During a raid, the server's copy of your partner's profile is stale.** Their quest progress
-advances on *their* client and reaches the server when Fika syncs it — in practice at raid end,
-not continuously. So "live in-raid progress" is not straightforwardly available, and a UI that
-implied it would be lying.
+Be precise about this in the UI, because the two get conflated:
 
-Be honest in the UI about which of these it is:
+- **Which quests they have, and which objectives are outstanding on this map** — available, and
+  correct for the whole raid. This is the actual ask.
+- **Live progress ticking** (they just got 3/5 scavs) — *not* available. Their progress advances
+  on their client and reaches the server when Fika syncs, in practice at raid end. Do not render a
+  live-looking counter from raid-start data.
 
-- **Roster live, progress as of last sync** — achievable, and probably what the feature should be.
-- **Roster and progress both live** — needs a per-tick sync path that does not exist today, and
-  would mean QuestMap taking on profile synchronization, which `quest-actions-plan.md` explicitly
-  scopes out as Fika's job.
+In practice the second matters far less than it sounds: what you want in raid is "does Woulf also
+need the Streets item, should we go together", and that answer does not change mid-raid. Label the
+progress numbers as of raid start and the feature is honest.
 
-Between raids, in the hideout or menu, there is no staleness problem at all — that is where this
-feature is most useful and most correct.
+### Design
 
-### Staged approach
+1. **Fetch partner snapshots once, at raid start** — during the loading screen, not in the raid.
+   `NativeCoopDataSource` already does the fetch; it needs a call site on the raid-entry path.
+   Never `await` on a Unity path — start the `Task` and poll `IsCompleted` from a coroutine, the
+   same pattern the existing loads use.
+2. **Filter each partner's quests to the current map** with the rules that already exist —
+   `QuestObjectiveMapRules.OutstandingTaskLocations` against their `CompletedObjectiveIds`, then
+   `InRaidQuestContext.DefaultLocationIds` for the map aliases. This is the same "where does this
+   player still have work" question the co-op planner asks, so it must reuse that rule rather than
+   the quest's full map list.
+3. **Extend `RaidTrackedQuestListProjection`** with partner bands, and render them in
+   `RaidTrackedQuestListView` below your own. The list already does current-map-first banding and
+   full-height layout, so this is additive.
+4. **No Fika dependency for any of the above.** You select the pool before the raid (or it is
+   remembered — see below), and the in-raid view uses whoever is in it.
 
-**Stage 1 — remember the pool (no Fika dependency).** Persist the selected co-op pool and offer
-it on next load. Cheap, no new dependency, and it removes most of the repetitive selection. Worth
-doing regardless of whether stage 2 ever happens, and it is the fallback when Fika is absent.
+### Staged
 
-**Stage 2 — read the roster from Fika (soft dependency).** Ask Fika for the players in the current
-session, map them to profile ids, and pre-select the pool. Must be a **soft** BepInEx dependency
-(`[BepInDependency(..., DependencyFlags.SoftDependency)]`) so QuestMap still loads and behaves
-normally with no Fika installed — the mod's whole compatibility story is that it degrades rather
-than aborts.
+**Stage 1 — remember the pool.** Persist the selected co-op pool so it survives restarts. Cheap,
+no dependency, useful on its own, and it is what makes stage 2 usable without Fika.
 
-**Stage 3 — refresh on raid end.** Re-pull partner snapshots when the raid ends and Fika has
-synced, so the post-raid view is correct. QuestMap already schedules a coalesced topology reload
-on raid exit; this would ride along with it.
+**Stage 2 — the in-raid partner bands.** The feature above. Depends only on stage 1.
 
-### Open questions — resolve before designing further
+**Stage 3 — auto-detect the roster from Fika.** Replace "the pool you picked" with "whoever is
+actually in this session", as a **soft** BepInEx dependency
+(`DependencyFlags.SoftDependency`) so QuestMap still loads normally with no Fika installed. This
+is a convenience on top of a feature that already works, not a prerequisite for it — which is the
+main reason to sequence it last.
 
-1. **Does Fika expose the session roster publicly, and with what?** Player list, and crucially
-   whether it yields a **profile id** that matches what `SaveServer.GetProfiles()` returns, or
-   only a nickname / session id needing a lookup. **Unverified.** Fika is open source — check its
-   source rather than guessing, and do not decompile the installed DLL.
-2. **Is the roster reachable from where QuestMap's plugin runs?** Both are client-side BepInEx
-   plugins in the same Unity process, which is promising — no server round-trip needed for the
-   roster, only for the progress QuestMap already fetches. Confirm load order and that the type is
-   public.
-3. **Dedicated/headless host vs P2P host** — does the roster look different, and does the host's
-   own profile appear in it?
-4. **Version coupling.** Fika here is `2.3.9`, and QuestMap deliberately guards exact SPT/EFT
-   versions. Decide what happens on a Fika version it does not recognize: degrade to manual
-   selection (consistent with the existing compatibility posture) rather than fail.
-5. **Does upstream want a Fika dependency at all?** Upstream already lists Fika compatibility for
-   handover/turn-in, so Fika-awareness is not foreign to the project — but a *soft dependency on
-   Fika types* is a bigger commitment than tolerating Fika's presence. Ask before building
-   stage 2.
+**Stage 4 — live in-raid progress (speculative).** Would need partner progress pushed between
+clients during the raid, presumably over Fika's own networking. Materially bigger, brings QuestMap
+close to profile synchronization, which its authority boundaries and `quest-actions-plan.md`
+deliberately leave to Fika. Do not start this without deciding that boundary question first.
 
-### Where this would live
+### Open questions
+
+1. **Does Fika expose the session roster publicly, and does it yield a profile id** matching what
+   `SaveServer.GetProfiles()` returns, or only a nickname needing a lookup? **Unverified** — Fika
+   is open source, so read its source rather than guessing, and do not decompile the installed DLL.
+   Only blocks stage 3.
+2. **Can the client reach `/questmap/client/coop/*` during raid load?** Expected yes — same HTTP
+   host the client already uses — but confirm, and confirm it does not extend load time
+   measurably. `RaidPerformanceTelemetry` is the place to measure.
+3. **Screen space.** The hotkey raid list already uses full available height with its own bands.
+   Decide whether partners are extra bands, a toggle, or a separate page before building.
+4. **How many partners?** The pool is N, but a raid list showing four players' quests may be
+   unreadable. Consider capping what is rendered in raid.
+5. **Does upstream want a Fika dependency at all?** Upstream lists Fika compatibility for
+   handover/turn-in, so Fika-awareness is not foreign — but a soft dependency on Fika *types* is a
+   bigger commitment than tolerating its presence. Ask before stage 3. Stages 1 and 2 raise no such
+   question.
+
+### Where this lives
 
 Roster discovery is client-side and Fika-specific, so it does **not** belong in
 `SPTQuestMap.Core` — Core is `netstandard2.1` and shared with the server, which has no business
-knowing about Fika. Keep it in `SPTQuestMap.Client`, behind a small interface with a
-no-Fika implementation, so the co-op views depend on "who are my partners" and not on Fika.
+knowing about Fika. Keep it in `SPTQuestMap.Client` behind a small interface with a no-Fika
+implementation, so the co-op views depend on "who are my partners" rather than on Fika.
+
+Map filtering, by contrast, **is** a Core rule and already exists there. Do not reimplement it in
+the raid runtime.
 
 ---
 
