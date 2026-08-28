@@ -122,6 +122,29 @@ left, right)`. It sets the anchors, pivot and `sizeDelta` correctly and takes in
 units you actually mean. Only hand-roll a rect when the element is genuinely not stretched
 (a right-aligned value column pinned with `anchorMin = anchorMax = (1,1)` is fine).
 
+## 3b. A decorative Image swallows every click over its rect
+
+Unity defaults `Image.raycastTarget` to **true**. A background tint set on a full-surface rect
+therefore absorbs input across that whole rect, including any native UI underneath it - and
+alpha is irrelevant, so a 0.10-alpha tint you can barely see blocks just as hard as an opaque
+one. The client sets `raycastTarget = false` on decorative images in twenty-odd places for
+exactly this reason; `UnityUiFactory` does it for the images it creates.
+
+> The Coop view's root, header and viewport backgrounds were created with a bare
+> `AddComponent<Image>().color = ...` and kept the default. The surface spans the mount, which
+> reaches to within ~44 units of the Character tab bar, so clicking MAP / ACHIEVEMENTS /
+> PRESTIGE did nothing and the player was trapped on the Coop view. The graph views share the
+> same construction but leave native panels active above them in that strip, which is why only
+> Coop showed it.
+
+**Rule:** every Image that exists only to paint something gets `raycastTarget = false`. Leave it
+on only where the element must actually receive input - a ScrollRect's viewport (its drag
+target), a scrollbar, or a real button's own graphic.
+
+**Symptom to recognise:** input works in one region of the screen and not another, split
+spatially rather than by control. "The bottom nav works but the top tabs do not" is a covering
+rect, not a broken handler.
+
 ## 4. Read quest state through `QuestGraphRules`, never the raw dictionary
 
 `QuestProfileOverlay.AuthoritativeDisplayStates` is the **last server snapshot**.

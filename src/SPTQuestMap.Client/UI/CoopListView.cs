@@ -68,7 +68,13 @@ internal sealed class CoopListView : IDisposable
         var root = UnityUiFactory.CreateRect("QuestMapCoop", mountRect.parent);
         UnityUiFactory.CopyRect(mountRect, root);
         root.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
-        root.gameObject.AddComponent<Image>().color = new Color(0.075f, 0.095f, 0.105f, 0.10f);
+        // Decorative tint only. Unity defaults raycastTarget to true, and this rect spans the
+        // whole mount - including the strip EFT's Character tab bar sits in - so leaving it on
+        // swallowed the clicks for MAP / ACHIEVEMENTS / PRESTIGE and trapped the player on this
+        // view. Everything here that must stay clickable owns its own raycast target.
+        var rootBackground = root.gameObject.AddComponent<Image>();
+        rootBackground.color = new Color(0.075f, 0.095f, 0.105f, 0.10f);
+        rootBackground.raycastTarget = false;
 
         var header = UnityUiFactory.CreateRect("Header", root);
         header.anchorMin = new Vector2(0, 1);
@@ -76,7 +82,10 @@ internal sealed class CoopListView : IDisposable
         header.pivot = new Vector2(0.5f, 1);
         header.offsetMin = new Vector2(0, -HeaderHeight);
         header.offsetMax = Vector2.zero;
-        header.gameObject.AddComponent<Image>().color = new Color(0.055f, 0.07f, 0.075f, 0.99f);
+        var headerBackground = header.gameObject.AddComponent<Image>();
+        headerBackground.color = new Color(0.055f, 0.07f, 0.075f, 0.99f);
+        // The tab and profile-chip buttons on it are their own raycast targets.
+        headerBackground.raycastTarget = false;
 
         var pickerHost = UnityUiFactory.CreateRect("Picker", header);
         pickerHost.anchorMin = new Vector2(0, 0);
@@ -90,7 +99,9 @@ internal sealed class CoopListView : IDisposable
 
         var viewport = UnityUiFactory.CreateRect("Viewport", root);
         UnityUiFactory.Stretch(viewport, 8, 8, HeaderHeight + 4, 8);
-        viewport.gameObject.AddComponent<Image>().color = Color.clear;
+        var viewportBackground = viewport.gameObject.AddComponent<Image>();
+        viewportBackground.color = Color.clear;
+        viewportBackground.raycastTarget = false;
 
         var scrollViewport = UnityUiFactory.CreateRect("ScrollViewport", viewport);
         UnityUiFactory.Stretch(scrollViewport, 0, 14, 0, 0);
