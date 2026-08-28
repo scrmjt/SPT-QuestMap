@@ -577,6 +577,53 @@ internal sealed class GlobalTasksScreenController : IDisposable
             if (CustomDetailsEnabled && _selectedQuestId is not null) ShowSelectedQuestDetails();
         }
         QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_VIEW screen={_screen.GetInstanceID()}; view={mode}; native=False");
+        LogTabStripHitTest(mode);
+    }
+
+    /// <summary>
+    /// Diagnostic: what actually receives a click over EFT's Character tab strip.
+    ///
+    /// Two rounds of reasoning about which rect covers what were both wrong, so this asks the
+    /// EventSystem instead of inferring. It raycasts three points across the strip and logs the
+    /// hierarchy path of the topmost hit. A QuestMap object in that path names the blocker; an
+    /// EFT object means input is arriving and the fault is elsewhere entirely.
+    ///
+    /// Costs nothing when debug logging is off, and runs once per mode switch, not per frame.
+    /// </summary>
+    private void LogTabStripHitTest(GlobalQuestGraphMode mode)
+    {
+        if (!QuestMapDebugLog.Enabled) return;
+        var eventSystem = EventSystem.current;
+        if (eventSystem == null)
+        {
+            QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_HITTEST mode={mode}; eventSystem=null");
+            return;
+        }
+
+        // The strip sits ~25 units below the top of a 1080-unit canvas; scale that to real pixels.
+        var scale = Screen.height / 1080f;
+        var y = Screen.height - (25f * scale);
+        foreach (var fraction in new[] { 0.2f, 0.45f, 0.7f })
+        {
+            var position = new Vector2(Screen.width * fraction, y);
+            var pointer = new PointerEventData(eventSystem) { position = position };
+            var hits = new List<RaycastResult>();
+            eventSystem.RaycastAll(pointer, hits);
+            var top = hits.Count > 0 ? DescribeHierarchy(hits[0].gameObject.transform) : "none";
+            QuestMapDebugLog.Info(Log,
+                $"QUESTMAP_M06_HITTEST mode={mode}; x={position.x:0}; y={position.y:0}; " +
+                $"hits={hits.Count}; top={top}");
+        }
+    }
+
+    /// <summary>Root-first path of a transform, capped so one log line stays readable.</summary>
+    private static string DescribeHierarchy(Transform? transform)
+    {
+        var names = new List<string>();
+        for (var current = transform; current != null && names.Count < 8; current = current.parent)
+            names.Add(current.name);
+        names.Reverse();
+        return string.Join("/", names);
     }
 
     private static bool IsCoopMode(GlobalQuestGraphMode mode) =>
