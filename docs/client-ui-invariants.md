@@ -55,6 +55,34 @@ and the tab that would return you to it does not exist.
 **Rule:** add a mode freely; never remove one. Fold retired modes onto their replacement at
 load, and keep the old member with a comment saying why it survives.
 
+## 1d. The surface outlives the screen: Close is not the only way a screen goes away
+
+The only lifecycle hooks are Harmony patches on `TasksScreen.Show` and `TasksScreen.Close`
+(`PatchTargetCatalog`). Switching to another **Character** tab - ACHIEVEMENTS, MAP, PRESTIGE -
+does **not** call `Close`, so `Suspend()` never runs.
+
+That would be harmless if the QuestMap surface were a child of the screen. It is not.
+`CreateFullSurfaceMount` mounts it under `FindCommonRectAncestor(tasksPart, notes, questItems,
+selectors)`, which resolves ABOVE the screen - so EFT deactivating the screen does not take
+the surface with it.
+
+> Reported as "the Tasks tab sticks - other tabs appear behind the QuestMap screens", and
+> earlier as "I can't go to any other main tab". Both are the same defect, and note the first
+> framing was misleading: the clicks always worked and EFT really did switch tabs. Our surface
+> was simply still painted on top of the new one.
+
+`WatchNativeScreenVisibility` mirrors `_screen.gameObject.activeInHierarchy` onto the active root
+every frame. Two deliberate choices in it:
+
+- It does **not** test a CanvasGroup alpha. The coordinator's anti-flicker veil drives alpha to
+  0 on this very screen during mount, so reading it would hide the surface while it is built.
+- It is additive. If a future EFT build hides the screen some other way and `activeInHierarchy`
+  never goes false, the watch does nothing rather than misbehaving.
+
+**Rule:** anything mounted outside the screen's own hierarchy must track that screen's
+visibility itself. Do not assume a lifecycle patch fires for every way a screen can be hidden -
+`Close` is one path, not the path.
+
 ## 2. `Destroy()` is deferred to the end of the frame — `SetActive(false)` first
 
 Rows in these views are **absolutely positioned**, not laid out by a layout group. A

@@ -96,6 +96,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private readonly Dictionary<string, Image> _coopPickerChips = new(StringComparer.Ordinal);
     private bool _coopLoading;
     private readonly MonoBehaviour _coroutineOwner;
+    private Coroutine? _surfaceVisibilityWatch;
+    private bool _loggedSurfaceParenting;
     private string? _raidLocationId;
     private AbstractQuestControllerClass? _raidQuestController;
     private bool _showAllFuture;
@@ -198,6 +200,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _mounted = true;
         _visible = true;
         SubscribeInventoryUpdates();
+        _surfaceVisibilityWatch = _coroutineOwner.StartCoroutine(WatchNativeScreenVisibility());
         QuestMapDebugLog.Info(Log,
             "QUESTMAP_M06_MOUNT " +
             $"screen={_screen.GetInstanceID()}; mode={_mode}; nodes={_projection?.Nodes.Count ?? 0}; " +
@@ -283,6 +286,56 @@ internal sealed class GlobalTasksScreenController : IDisposable
             $"mode={_mode}; cachedRows={cachedRows}; rootReused={!topologyChanged && !modeChanged}");
         return topologyChanged || modeChanged ? "global-content-rebuilt" : "global-screen-reused";
     }
+
+    /// <summary>
+    /// Keeps the QuestMap surface hidden whenever EFT has hidden the Tasks screen.
+    ///
+    /// The only lifecycle hooks are Harmony patches on <c>TasksScreen.Show</c> and
+    /// <c>TasksScreen.Close</c>. Switching to another Character tab - ACHIEVEMENTS, MAP,
+    /// PRESTIGE - does not call Close, so <see cref="Suspend"/> never runs. That alone would be
+    /// harmless if the surface were a child of the screen, but it is not: the mount is created
+    /// under the common ancestor of TasksPart, Notes and Quest Items, which lives ABOVE the
+    /// screen, so deactivating the screen does not take the surface with it. The result was the
+    /// quest table and filter strip still painted over whichever tab the player switched to.
+    ///
+    /// Mirroring the screen's own activity is deliberately additive: if a future EFT build hides
+    /// the screen some other way and <c>activeInHierarchy</c> never goes false, this does
+    /// nothing rather than misbehaving. It intentionally does NOT test a CanvasGroup alpha -
+    /// the coordinator's anti-flicker veil drives alpha to 0 on this very screen during mount,
+    /// and reading it here would hide the surface exactly while it is being built.
+    /// </summary>
+    private System.Collections.IEnumerator WatchNativeScreenVisibility()
+    {
+        while (!_disposed && _mounted)
+        {
+            SyncSurfaceVisibility();
+            yield return null;
+        }
+    }
+
+    private void SyncSurfaceVisibility()
+    {
+        var root = ActiveSurfaceRoot();
+        if (root == null) return;
+
+        if (!_loggedSurfaceParenting)
+        {
+            _loggedSurfaceParenting = true;
+            // Records whether the surface is inside the screen. If it ever reports True, EFT
+            // hides it for us and this whole watch is redundant.
+            QuestMapDebugLog.Info(Log,
+                $"QUESTMAP_M06_SURFACE screen={_screen.GetInstanceID()}; " +
+                $"rootUnderScreen={(_screen != null && root.IsChildOf(_screen.transform))}; " +
+                $"screenActive={(_screen != null && _screen.gameObject.activeInHierarchy)}");
+        }
+
+        var shouldShow = _visible && _screen != null && _screen.gameObject.activeInHierarchy;
+        if (root.gameObject.activeSelf != shouldShow) root.gameObject.SetActive(shouldShow);
+    }
+
+    /// <summary>The root of whichever content view is currently mounted, graph or Coop.</summary>
+    private RectTransform? ActiveSurfaceRoot() =>
+        IsCoopMode(_mode) ? _coopView?.Root : _graphView?.Root;
 
     public void Suspend()
     {
@@ -452,6 +505,11 @@ internal sealed class GlobalTasksScreenController : IDisposable
         PersistCurrentState();
         QuestGraphViewStateStore.Flush();
         _disposed = true;
+        if (_surfaceVisibilityWatch is not null)
+        {
+            _coroutineOwner.StopCoroutine(_surfaceVisibilityWatch);
+            _surfaceVisibilityWatch = null;
+        }
         UnsubscribeInventoryUpdates();
         _visible = false;
         foreach (var pair in _nativeControlStates)
