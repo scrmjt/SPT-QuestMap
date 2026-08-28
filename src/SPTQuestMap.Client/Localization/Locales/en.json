@@ -232,6 +232,7 @@
   "label.coopChainProgressSubtitle": "How far you are from {profile} on each chain",
   "label.coopCatchUpMapsFor": "Best Maps to Catch Up to {profile}",
   "label.coopCatchUpMapsSubtitle": "Quests {profile} finished that you have not",
+  "label.coopMoreQuests": "+{count} more",
   "label.coopMapSuggestionsSubtitle": "Quests each player can take here right now",
   "label.coopYou": "You",
   "tooltip.coopToggleProfile": "Compare against {profile}.",

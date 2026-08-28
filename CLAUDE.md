@@ -83,9 +83,14 @@ Every `dotnet` invocation needs `SPT_ROOT` set or it fails with "Set SptInstallR
 scripts/deploy.ps1 -Target Server -SptRoot D:\SPT4013_Test
 ```
 
-Server exe is `D:\SPT4013_Test\SPT\SPT.Server.exe` (under `SPT\`, not the root). Start it with
-`Start-Process` so it gets a real console — from a redirected shell it dies with
-`Unable to get console mode`. Web app at `https://127.0.0.1:6969/questmap` (self-signed, `curl -k`).
+**The script starts the server itself** whenever the server DLL changed — unconditionally,
+with no check for whether one was running (`deploy.ps1` line ~146). So do **not** start one
+yourself after a server deploy, or you get two processes: only one binds 6969 and the other
+is a silent orphan. A client-only deploy leaves `serverChanged` false and starts nothing.
+
+Server exe is `D:\SPT4013_Test\SPT\SPT.Server.exe` (under `SPT\`, not the root). If you do
+need to start it by hand, use `Start-Process` so it gets a real console — from a redirected
+shell it dies with `Unable to get console mode`. Web app at `https://127.0.0.1:6969/questmap` (self-signed, `curl -k`).
 Responses from the SPT host are raw **zlib** regardless of `Accept-Encoding`.
 
 The only in-game trace is `D:\SPT4013_Test\BepInEx\LogOutput.log`:

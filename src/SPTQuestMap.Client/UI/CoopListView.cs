@@ -8,7 +8,12 @@ using UnityEngine.UI;
 namespace SPTQuestMap.Client.UI;
 
 /// <summary>One line of a <see cref="CoopSection"/>: a label, and optionally a value shown flush right.</summary>
-internal sealed record CoopRow(string Text, string? Value = null, Color? TextColor = null);
+/// <summary>
+/// One line in a section. <paramref name="Indent"/> marks a detail row that belongs to the
+/// row above it - the quests listed under a catch-up map - so the grouping is visible
+/// without inventing a second nesting level of sections.
+/// </summary>
+internal sealed record CoopRow(string Text, string? Value = null, Color? TextColor = null, bool Indent = false);
 
 /// <summary>A titled group of rows - one series, one map, one teammate block.</summary>
 internal sealed record CoopSection(string Title, IReadOnlyList<CoopRow> Rows, string? Subtitle = null);
@@ -31,6 +36,7 @@ internal sealed class CoopListView : IDisposable
     private const float SideInset = 10f;
     private const float DefaultValueColumnWidth = 64f;
     private const float ColumnGap = 8f;
+    private const float IndentWidth = 14f;
 
     private readonly RectTransform _content;
     private readonly ManualLogSource _log;
@@ -237,7 +243,8 @@ internal sealed class CoopListView : IDisposable
                 // The label yields the value column's width plus a gap so the two never
                 // overlap, rather than both being sized against the full row width.
                 var labelRight = row.Value is null ? SideInset : SideInset + valueColumnWidth + 8f;
-                var rowRect = UnityUiFactory.CreateListRow("Row", sectionRoot, rowY, RowHeight, SideInset, labelRight);
+                var labelLeft = row.Indent ? SideInset + IndentWidth : SideInset;
+                var rowRect = UnityUiFactory.CreateListRow("Row", sectionRoot, rowY, RowHeight, labelLeft, labelRight);
                 var rowText = UnityUiFactory.AddText(rowRect.gameObject, row.Text, 11, TextAlignmentOptions.MidlineLeft,
                     row.TextColor ?? new Color(0.88f, 0.89f, 0.87f, 1f));
                 rowText.enableWordWrapping = false;

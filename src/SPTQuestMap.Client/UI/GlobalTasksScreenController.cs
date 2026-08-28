@@ -24,6 +24,9 @@ namespace SPTQuestMap.Client.UI;
 
 internal sealed class GlobalTasksScreenController : IDisposable
 {
+    private static readonly Color CatchUpQuestColor = new(0.72f, 0.74f, 0.72f, 1f);
+    private const int MaxCatchUpMaps = 8;
+    private const int MaxCatchUpQuestsPerMap = 6;
     private const float MinimumCharacterNavigationInset = 40f;
     private const float CharacterNavigationInset = 44f;
     private const string FallbackLocationBannerUrl = "/files/banners/norvinskzone.png";
@@ -847,7 +850,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
             // Catch-up maps: quests they finished, I have not, and I can actually take -
             // grouped by map NAME rather than id, which folds location aliases together the
             // same way the InProgress map strip already does.
-            var byMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var byMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var node in _topology.Nodes)
             {
                 if (!applicable.Contains(node.Id)) continue;
@@ -858,19 +861,42 @@ internal sealed class GlobalTasksScreenController : IDisposable
                 foreach (var map in OutstandingTaskLocations(node, myCompletedObjectives))
                 {
                     if (string.IsNullOrWhiteSpace(map.Name)) continue;
-                    byMap[map.Name] = byMap.GetValueOrDefault(map.Name) + 1;
+                    if (!byMap.TryGetValue(map.Name, out var questNames))
+                        byMap[map.Name] = questNames = new List<string>();
+                    questNames.Add(node.Name);
                 }
             }
-            var mapRows = byMap
-                .OrderByDescending(pair => pair.Value)
-                .Take(8)
-                .Select(pair => new CoopRow(pair.Key, pair.Value.ToString()))
-                .ToArray();
-            if (mapRows.Length > 0)
+
+            // The count alone said where to go but not what for, so each map now carries the
+            // quests behind its number. Ordered by name within a map, and the map order is
+            // broken by name too - Dictionary enumeration order is unspecified, so equal
+            // counts would otherwise reshuffle between refreshes for no visible reason.
+            var mapRows = new List<CoopRow>();
+            foreach (var pair in byMap
+                .OrderByDescending(entry => entry.Value.Count)
+                .ThenBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                .Take(MaxCatchUpMaps))
+            {
+                mapRows.Add(new CoopRow(pair.Key, pair.Value.Count.ToString()));
+                foreach (var questName in pair.Value
+                    .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                    .Take(MaxCatchUpQuestsPerMap))
+                {
+                    mapRows.Add(new CoopRow(questName, null, CatchUpQuestColor, Indent: true));
+                }
+                var hidden = pair.Value.Count - MaxCatchUpQuestsPerMap;
+                if (hidden > 0)
+                {
+                    mapRows.Add(new CoopRow(
+                        ClientLocale.Format("label.coopMoreQuests", ClientLocale.Arg("count", hidden.ToString())),
+                        null, CatchUpQuestColor, Indent: true));
+                }
+            }
+            if (mapRows.Count > 0)
             {
                 sections.Add(new CoopSection(
                     ClientLocale.Format("label.coopCatchUpMapsFor", ClientLocale.Arg("profile", nickname)),
-                    mapRows,
+                    mapRows.ToArray(),
                     ClientLocale.Text("label.coopCatchUpMapsSubtitle")));
             }
         }
@@ -966,7 +992,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
                         : count.Count.ToString();
                     return new CoopRow(LabelFor(count.ProfileId), value);
                 }));
-                return new CoopSection(row.MapName, rows, ClientLocale.Text("label.coopMapSuggestionsSubtitle"));
+                // No subtitle: it repeated the same sentence under every map in the column.
+                return new CoopSection(row.MapName, rows);
             })
             .ToArray();
     }

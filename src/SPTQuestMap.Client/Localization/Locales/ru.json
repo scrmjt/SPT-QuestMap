@@ -232,6 +232,7 @@
   "label.coopChainProgressSubtitle": "Насколько вы отстаёте от {profile} в каждой цепочке",
   "label.coopCatchUpMapsFor": "Лучшие карты, чтобы догнать {profile}",
   "label.coopCatchUpMapsSubtitle": "Задания, которые {profile} завершил, а вы нет",
+  "label.coopMoreQuests": "ещё {count}",
   "label.coopMapSuggestionsSubtitle": "Квесты, доступные каждому игроку прямо сейчас",
   "label.coopYou": "Вы",
   "tooltip.coopToggleProfile": "Сравнить с {profile}.",
