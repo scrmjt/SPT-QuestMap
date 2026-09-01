@@ -55,33 +55,51 @@ and the tab that would return you to it does not exist.
 **Rule:** add a mode freely; never remove one. Fold retired modes onto their replacement at
 load, and keep the old member with a comment saying why it survives.
 
-## 1d. The surface outlives the screen: Close is not the only way a screen goes away
+**Corollary - the Sherpa tab is called `Coop` in code.** That tab reads **SHERPA** in game, and the
+only occurrence of that word in the repository is the value of `label.coop` in `en.json`
+(`label.tasks` and `label.questMap` likewise front `InProgress` and `Full`). Renaming the enum member
+to match would strand every saved setting, per the rule above, so it stays `Coop` - which
+means grepping for a tab by its on-screen label will miss it. Start from
+`GlobalQuestGraphMode` and `BuildModeTabs` instead.
 
-The only lifecycle hooks are Harmony patches on `TasksScreen.Show` and `TasksScreen.Close`
-(`PatchTargetCatalog`). Switching to another **Character** tab - ACHIEVEMENTS, MAP, PRESTIGE -
-does **not** call `Close`, so `Suspend()` never runs.
+## 1d. Leaving the Tasks tab trips none of the signals you would expect
 
-That would be harmless if the QuestMap surface were a child of the screen. It is not.
-`CreateFullSurfaceMount` mounts it under `FindCommonRectAncestor(tasksPart, notes, questItems,
-selectors)`, which resolves ABOVE the screen - so EFT deactivating the screen does not take
-the surface with it.
+Switching to a sibling **Character** tab - ACHIEVEMENTS, MAP, PRESTIGE - fires nothing the
+client can see. Each of the three obvious signals was tried and each was wrong. All four
+statements below are measured, from `QUESTMAP_M06_*` log lines, not inferred from source:
 
-> Reported as "the Tasks tab sticks - other tabs appear behind the QuestMap screens", and
-> earlier as "I can't go to any other main tab". Both are the same defect, and note the first
-> framing was misleading: the clicks always worked and EFT really did switch tabs. Our surface
-> was simply still painted on top of the new one.
+| Candidate signal | What actually happens |
+| --- | --- |
+| `TasksScreen.Close` -> `Suspend()` | Never called. SUSPEND appears only for **bottom-nav** changes, never a top-tab switch. |
+| Screen GameObject deactivated | Stays active, so `activeInHierarchy` never goes false. |
+| Our surface covering the tab strip | It is not. An `EventSystem.RaycastAll` over the strip returns EFT's own MAP tab as topmost, identically in Coop and in the graph modes. |
+| Surface parented outside the screen | False - `rootUnderScreen=True`. It **is** a child, which is why deactivating the screen would have been enough had EFT ever done it. |
 
-`WatchNativeScreenVisibility` mirrors `_screen.gameObject.activeInHierarchy` onto the active root
-every frame. Two deliberate choices in it:
+So the clicks always worked and EFT really did switch tabs. Our surface was simply still
+painted on top of the new one, and the Tasks tab button still lit.
 
-- It does **not** test a CanvasGroup alpha. The coordinator's anti-flicker veil drives alpha to
-  0 on this very screen during mount, so reading it would hide the surface while it is built.
-- It is additive. If a future EFT build hides the screen some other way and `activeInHierarchy`
-  never goes false, the watch does nothing rather than misbehaving.
+> Reported three ways over two sessions - "I can't go to any other main tab", "the Tasks tab
+> sticks so other tabs appear behind the QuestMap screens", and "it's still stuck on the tasks
+> tab after I click COOP". One defect, three framings, and the first framing sent two fixes
+> after an input-blocking rect that never existed.
 
-**Rule:** anything mounted outside the screen's own hierarchy must track that screen's
-visibility itself. Do not assume a lifecycle patch fires for every way a screen can be hidden -
-`Close` is one path, not the path.
+**The signal that does work** is EFT's own tab toggle. `ResolveNativeTabToggle` latches, at Mount
+and Resume, whichever tab under `Tab Bar/Tabs` is currently on - by definition Tasks, since that
+is the only reason the controller mounts - and `SyncSurfaceVisibility` mirrors it every frame.
+Latching by **state** rather than by the name "Tasks" keeps it locale- and build-independent;
+it must never be latched from the per-frame watch, where the selected tab may well be MAP.
+
+Every test in that watch is additive, so an EFT change degrades to today's behaviour rather
+than to a broken one: an unresolved toggle gates nothing. It also deliberately does **not**
+test a CanvasGroup alpha - the coordinator's anti-flicker veil drives alpha to 0 on this very
+screen during mount, so reading it would hide the surface while it is being built.
+
+**Rule:** a screen's lifecycle patches tell you when the screen opens and closes, not when it
+stops being the visible one. For "is my content still what the player is looking at", read the
+native control that decides it.
+
+**Method rule, earned the hard way:** when a UI symptom survives two fixes, stop reading source
+and ask the runtime. One `EventSystem.RaycastAll` line disproved a week of plausible reasoning.
 
 ## 2. `Destroy()` is deferred to the end of the frame — `SetActive(false)` first
 
@@ -131,19 +149,24 @@ one. The client sets `raycastTarget = false` on decorative images in twenty-odd 
 exactly this reason; `UnityUiFactory` does it for the images it creates.
 
 > The Coop view's root, header and viewport backgrounds were created with a bare
-> `AddComponent<Image>().color = ...` and kept the default. The surface spans the mount, which
-> reaches to within ~44 units of the Character tab bar, so clicking MAP / ACHIEVEMENTS /
-> PRESTIGE did nothing and the player was trapped on the Coop view. The graph views share the
-> same construction but leave native panels active above them in that strip, which is why only
-> Coop showed it.
+> `AddComponent<Image>().color = ...` and kept the default, so they are now set explicitly.
+> Worth doing on its own merits - but **it fixed nothing**, and the reasoning that led there was
+> wrong. The surface was blamed for the player being stuck on the Coop view; a hit test then
+> showed EFT's own MAP tab receiving that click perfectly well. See [1d](#1d-leaving-the-tasks-tab-trips-none-of-the-signals-you-would-expect)
+> for what was actually happening.
 
 **Rule:** every Image that exists only to paint something gets `raycastTarget = false`. Leave it
 on only where the element must actually receive input - a ScrollRect's viewport (its drag
 target), a scrollbar, or a real button's own graphic.
 
 **Symptom to recognise:** input works in one region of the screen and not another, split
-spatially rather than by control. "The bottom nav works but the top tabs do not" is a covering
-rect, not a broken handler.
+spatially rather than by control - a covering rect, not a broken handler.
+
+**Confirm it before acting on it.** That symptom also describes a control that receives the
+click and does its job while stale content stays painted on top, which is what actually
+happened here and looks identical from the player's chair. One `EventSystem.RaycastAll` at the
+dead coordinates separates the two in a single line of log, and costs far less than a fix
+aimed at the wrong cause.
 
 ## 4. Read quest state through `QuestGraphRules`, never the raw dictionary
 

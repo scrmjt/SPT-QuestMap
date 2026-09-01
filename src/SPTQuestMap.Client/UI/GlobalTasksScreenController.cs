@@ -98,6 +98,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private readonly MonoBehaviour _coroutineOwner;
     private Coroutine? _surfaceVisibilityWatch;
     private bool _loggedSurfaceParenting;
+    private Toggle? _nativeTabToggle;
+    private string? _lastSurfaceState;
     private string? _raidLocationId;
     private AbstractQuestControllerClass? _raidQuestController;
     private bool _showAllFuture;
@@ -200,6 +202,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _mounted = true;
         _visible = true;
         SubscribeInventoryUpdates();
+        ResolveNativeTabToggle();
         _surfaceVisibilityWatch = _coroutineOwner.StartCoroutine(WatchNativeScreenVisibility());
         QuestMapDebugLog.Info(Log,
             "QUESTMAP_M06_MOUNT " +
@@ -278,6 +281,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         }
         _visible = true;
         SubscribeInventoryUpdates();
+        ResolveNativeTabToggle();
         UpdateQuestItemsButtonState();
         var cachedRows = (_graphView as InProgressQuestTableView)?.CachedRowCount ?? 0;
         QuestMapDebugLog.Info(Log,
@@ -288,21 +292,29 @@ internal sealed class GlobalTasksScreenController : IDisposable
     }
 
     /// <summary>
-    /// Keeps the QuestMap surface hidden whenever EFT has hidden the Tasks screen.
+    /// Keeps the QuestMap surface hidden whenever the player is not on the Tasks tab.
     ///
-    /// The only lifecycle hooks are Harmony patches on <c>TasksScreen.Show</c> and
-    /// <c>TasksScreen.Close</c>. Switching to another Character tab - ACHIEVEMENTS, MAP,
-    /// PRESTIGE - does not call Close, so <see cref="Suspend"/> never runs. That alone would be
-    /// harmless if the surface were a child of the screen, but it is not: the mount is created
-    /// under the common ancestor of TasksPart, Notes and Quest Items, which lives ABOVE the
-    /// screen, so deactivating the screen does not take the surface with it. The result was the
-    /// quest table and filter strip still painted over whichever tab the player switched to.
+    /// Switching to a sibling Character tab - ACHIEVEMENTS, MAP, PRESTIGE - trips none of the
+    /// signals you would expect, which is why this took several wrong attempts. Measured, not
+    /// inferred:
     ///
-    /// Mirroring the screen's own activity is deliberately additive: if a future EFT build hides
-    /// the screen some other way and <c>activeInHierarchy</c> never goes false, this does
-    /// nothing rather than misbehaving. It intentionally does NOT test a CanvasGroup alpha -
-    /// the coordinator's anti-flicker veil drives alpha to 0 on this very screen during mount,
-    /// and reading it here would hide the surface exactly while it is being built.
+    /// - <c>TasksScreen.Close</c> is not called, so <see cref="Suspend"/> never runs. In the log,
+    ///   SUSPEND appears only for bottom-nav changes, never for a top-tab switch.
+    /// - The screen GameObject stays active. The surface IS a child of it
+    ///   (<c>rootUnderScreen=True</c>), so if EFT deactivated the screen the surface would go with
+    ///   it for free - it does not, so <c>activeInHierarchy</c> never goes false either.
+    /// - Nothing is blocking input. An EventSystem raycast over the strip returns EFT's own MAP
+    ///   tab as the topmost receiver, identically in Coop and in the graph modes. The tab really
+    ///   does change; only our painting is left behind on top of it.
+    ///
+    /// So the authoritative signal is EFT's own tab toggle, latched at mount time by
+    /// <see cref="ResolveNativeTabToggle"/>.
+    ///
+    /// Every test here is additive: an unresolved toggle gates nothing, and if a future EFT build
+    /// hides the screen some other way this does nothing rather than misbehaving. It
+    /// intentionally does NOT test a CanvasGroup alpha - the coordinator's anti-flicker veil
+    /// drives alpha to 0 on this very screen during mount, and reading it here would hide the
+    /// surface exactly while it is being built.
     /// </summary>
     private System.Collections.IEnumerator WatchNativeScreenVisibility()
     {
@@ -329,8 +341,101 @@ internal sealed class GlobalTasksScreenController : IDisposable
                 $"screenActive={(_screen != null && _screen.gameObject.activeInHierarchy)}");
         }
 
-        var shouldShow = _visible && _screen != null && _screen.gameObject.activeInHierarchy;
+        var shouldShow = _visible
+            && _screen != null
+            && _screen.gameObject.activeInHierarchy
+            && (_nativeTabToggle == null || _nativeTabToggle.isOn);
         if (root.gameObject.activeSelf != shouldShow) root.gameObject.SetActive(shouldShow);
+        LogSurfaceStateChanges(root, shouldShow);
+    }
+
+    /// <summary>
+    /// Latches onto whichever Character tab EFT has selected while this screen is being shown -
+    /// which is the Tasks tab, because that is the only reason this controller ever mounts.
+    ///
+    /// Resolved by state rather than by name: the tab whose Toggle is on at this instant is ours.
+    /// Called only from Mount and Resume, never from the per-frame watch - during the watch the
+    /// selected tab may well be MAP, and latching then would invert the test.
+    /// </summary>
+    private void ResolveNativeTabToggle()
+    {
+        if (_nativeTabToggle != null) return;
+        var root = ActiveSurfaceRoot();
+        if (root == null) return;
+        var tabs = FindNativeTabContainer(root);
+        if (tabs == null)
+        {
+            QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TAB screen={_screen.GetInstanceID()}; tabs=unresolved");
+            return;
+        }
+        foreach (Transform tab in tabs)
+        {
+            var toggle = tab.GetComponent<Toggle>();
+            if (toggle == null || !toggle.isOn) continue;
+            _nativeTabToggle = toggle;
+            QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TAB screen={_screen.GetInstanceID()}; latched={tab.name}");
+            return;
+        }
+        QuestMapDebugLog.Info(Log,
+            $"QUESTMAP_M06_TAB screen={_screen.GetInstanceID()}; latched=none; candidates={tabs.childCount}");
+    }
+
+    /// <summary>
+    /// EFT's Character tab strip. The path comes from a live EventSystem raycast over the strip -
+    /// "Common UI/Common UI/InventoryScreen/Tab Bar/Tabs/Map/..." - not from guessing, but it is
+    /// still a name, so every caller treats a null result as "do not gate on it".
+    /// </summary>
+    private static Transform? FindNativeTabContainer(Transform from)
+    {
+        for (var current = from; current != null; current = current.parent)
+        {
+            var tabs = current.Find("Tab Bar/Tabs");
+            if (tabs != null) return tabs;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Diagnostic: the ancestor chain and EFT's tab selection, logged only when one of them
+    /// changes. Three fixes reasoned from source were each contradicted by the next log, so this
+    /// records what the game actually does at the instant the player leaves the Tasks tab instead
+    /// of what the code suggests it should do. Runs per frame, so it stays behind the debug flag.
+    /// </summary>
+    private void LogSurfaceStateChanges(RectTransform root, bool shouldShow)
+    {
+        if (!QuestMapDebugLog.Enabled) return;
+        var chain = new List<string>();
+        for (var current = root.parent; current != null && chain.Count < 10; current = current.parent)
+        {
+            var flags = current.gameObject.activeSelf ? "on" : "OFF";
+            var group = current.GetComponent<CanvasGroup>();
+            if (group != null) flags += $",a={group.alpha:0.##}";
+            var canvas = current.GetComponent<Canvas>();
+            if (canvas != null) flags += $",sort={canvas.sortingOrder}";
+            chain.Add($"{current.name}[{flags}]");
+        }
+        chain.Reverse();
+        var state =
+            $"show={shouldShow}; screenActive={(_screen != null && _screen.gameObject.activeInHierarchy)}; " +
+            $"tabs={DescribeTabSelection(root)}; chain={string.Join(" > ", chain)}";
+        if (state == _lastSurfaceState) return;
+        _lastSurfaceState = state;
+        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_CHAIN mode={_mode}; {state}");
+    }
+
+    /// <summary>Which Character tabs report themselves selected, per EFT's own toggles.</summary>
+    private static string DescribeTabSelection(Transform root)
+    {
+        var tabs = FindNativeTabContainer(root);
+        if (tabs == null) return "unresolved";
+        var states = new List<string>();
+        foreach (Transform tab in tabs)
+        {
+            var toggle = tab.GetComponent<Toggle>();
+            var mark = toggle == null ? "?" : toggle.isOn ? "ON" : "off";
+            states.Add($"{tab.name}={mark}{(tab.gameObject.activeSelf ? "" : "/hidden")}");
+        }
+        return string.Join(",", states);
     }
 
     /// <summary>The root of whichever content view is currently mounted, graph or Coop.</summary>
