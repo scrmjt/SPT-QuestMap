@@ -321,6 +321,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         while (!_disposed && _mounted)
         {
             SyncSurfaceVisibility();
+            LogPointerPress();
             yield return null;
         }
     }
@@ -378,6 +379,55 @@ internal sealed class GlobalTasksScreenController : IDisposable
         }
         QuestMapDebugLog.Info(Log,
             $"QUESTMAP_M06_TAB screen={_screen.GetInstanceID()}; latched=none; candidates={tabs.childCount}");
+        DescribeTabComponents(tabs);
+    }
+
+    /// <summary>
+    /// Diagnostic: the component types on each Character tab.
+    ///
+    /// Every tab reported "?" against <c>GetComponent&lt;Toggle&gt;()</c>, so EFT is not using
+    /// Unity Toggles here and there is no known state to read. This names what they actually
+    /// are, once, so the next attempt reads the right component instead of guessing again.
+    /// </summary>
+    private void DescribeTabComponents(Transform tabs)
+    {
+        if (!QuestMapDebugLog.Enabled) return;
+        foreach (Transform tab in tabs)
+        {
+            var types = tab.GetComponents<Component>()
+                .Where(component => component != null)
+                .Select(component => component.GetType().Name);
+            QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TABTYPE tab={tab.name}; components={string.Join(",", types)}");
+        }
+    }
+
+    /// <summary>
+    /// Diagnostic: what the EventSystem hands the click, at the real cursor position and the
+    /// real moment, rather than a synthetic probe fired when the mode changed.
+    ///
+    /// Logs the top of the hit stack on press and again on release. A click that is received and
+    /// then cancelled - press and release resolving to different objects - reads differently
+    /// here from one that never reaches EFT at all, and those two have the same symptom from the
+    /// player's chair: the click is audible but the tab does not change.
+    /// </summary>
+    private void LogPointerPress()
+    {
+        if (!QuestMapDebugLog.Enabled) return;
+        var down = UnityEngine.Input.GetMouseButtonDown(0);
+        if (!down && !UnityEngine.Input.GetMouseButtonUp(0)) return;
+        var eventSystem = EventSystem.current;
+        if (eventSystem == null) return;
+
+        var position = (Vector2)UnityEngine.Input.mousePosition;
+        var pointer = new PointerEventData(eventSystem) { position = position };
+        var hits = new List<RaycastResult>();
+        eventSystem.RaycastAll(pointer, hits);
+        var stack = new List<string>();
+        for (var index = 0; index < hits.Count && index < 3; index++)
+            stack.Add(DescribeHierarchy(hits[index].gameObject.transform));
+        QuestMapDebugLog.Info(Log,
+            $"QUESTMAP_M06_CLICK mode={_mode}; phase={(down ? "down" : "up")}; " +
+            $"pos={position.x:0},{position.y:0}; hits={hits.Count}; stack={string.Join(" | ", stack)}");
     }
 
     /// <summary>
@@ -838,6 +888,23 @@ internal sealed class GlobalTasksScreenController : IDisposable
     /// fighting the colour set directly on the Image, and EFT's ButtonFeedback (the click and
     /// hover sounds every other control here plays) is only wired up for buttons.
     /// </summary>
+    /// <summary>
+    /// Picker placeholder text, in its own child rect rather than straight onto the host.
+    ///
+    /// <see cref="UnityUiFactory.AddText"/> only creates a child when the target already carries
+    /// a Graphic. PickerHost carries none, so passing it directly put the label on the host
+    /// itself - out of reach of the clear-children loop at the top of
+    /// <see cref="BuildCoopPicker"/>. "Loading players..." survived the rebuild and the profile
+    /// chips drew straight over it.
+    /// </summary>
+    private static void AddPickerPlaceholder(RectTransform host, string text)
+    {
+        var placeholder = UnityUiFactory.CreateRect("Placeholder", host);
+        UnityUiFactory.Stretch(placeholder);
+        UnityUiFactory.AddText(placeholder.gameObject, text, 11,
+            TextAlignmentOptions.MidlineLeft, new Color(0.75f, 0.77f, 0.75f, 1f));
+    }
+
     private void BuildCoopPicker(RectTransform host)
     {
         foreach (Transform child in host)
@@ -849,15 +916,13 @@ internal sealed class GlobalTasksScreenController : IDisposable
 
         if (!_coopProfilesLoaded)
         {
-            UnityUiFactory.AddText(host.gameObject, ClientLocale.Text("label.coopLoadingProfiles"), 11,
-                TextAlignmentOptions.MidlineLeft, new Color(0.75f, 0.77f, 0.75f, 1f));
+            AddPickerPlaceholder(host, ClientLocale.Text("label.coopLoadingProfiles"));
             return;
         }
 
         if (_coopProfiles.Length == 0)
         {
-            UnityUiFactory.AddText(host.gameObject, ClientLocale.Text("label.coopNoOtherProfiles"), 11,
-                TextAlignmentOptions.MidlineLeft, new Color(0.75f, 0.77f, 0.75f, 1f));
+            AddPickerPlaceholder(host, ClientLocale.Text("label.coopNoOtherProfiles"));
             return;
         }
 
