@@ -62,44 +62,58 @@ to match would strand every saved setting, per the rule above, so it stays `Coop
 means grepping for a tab by its on-screen label will miss it. Start from
 `GlobalQuestGraphMode` and `BuildModeTabs` instead.
 
-## 1d. Leaving the Tasks tab trips none of the signals you would expect
+## 1d. Never deactivate a native GameObject you only want to hide
 
-Switching to a sibling **Character** tab - ACHIEVEMENTS, MAP, PRESTIGE - fires nothing the
-client can see. Each of the three obvious signals was tried and each was wrong. All four
-statements below are measured, from `QUESTMAP_M06_*` log lines, not inferred from source:
+**Do not call ``SetActive(false)`` on one of EFT's own objects to hide it.** Deactivating stops
+every coroutine running on that object - silently, no exception, no log line - and EFT's screen
+transitions run on those. Hide it with a CanvasGroup (``alpha = 0``, ``interactable = false``,
+``blocksRaycasts = false``) and leave the object active. ``VeilNativeTasksPanel`` does this for
+TasksPanel and restores whatever was there on dispose, removing the component again if it added
+one.
 
-| Candidate signal | What actually happens |
+### The bug this came from, and how long it took to find
+
+Symptom: with QuestMap open, clicking a Character tab (MAP / ACHIEVEMENTS / PRESTIGE) played the
+tab's click sound and then did nothing. Four fixes missed, each built on a premise the next log
+disproved. The premises, and what actually killed them:
+
+| Premise | Disproved by |
 | --- | --- |
-| `TasksScreen.Close` -> `Suspend()` | Never called. SUSPEND appears only for **bottom-nav** changes, never a top-tab switch. |
-| Screen GameObject deactivated | Stays active, so `activeInHierarchy` never goes false. |
-| Our surface covering the tab strip | It is not. An `EventSystem.RaycastAll` over the strip returns EFT's own MAP tab as topmost, identically in Coop and in the graph modes. |
-| Surface parented outside the screen | False - `rootUnderScreen=True`. It **is** a child, which is why deactivating the screen would have been enough had EFT ever done it. |
+| A decorative Image was swallowing the click | ``EventSystem.RaycastAll`` over the strip returned EFT's own MAP tab as topmost |
+| ``Close`` fires, so ``Suspend`` can hide the surface | SUSPEND appears only for bottom-nav changes, never a top-tab switch |
+| The screen deactivates, so ``activeInHierarchy`` can gate it | Screen stays active; and ``rootUnderScreen=True``, so deactivation would have sufficed had it happened |
+| EFT's tabs are Toggles whose state can be latched | All eight logged ``?`` - they are EFT ``Tab`` components, not Unity Toggles |
+| **The bug is Coop-specific** | ``QUESTMAP_M06_CLICK`` caught MAP and ACHIEVEMENTS being clicked in **Full** mode with no switch either |
 
-So the clicks always worked and EFT really did switch tabs. Our surface was simply still
-painted on top of the new one, and the Tasks tab button still lit.
+That last row is the expensive one. Our own header tabs (TASKS / QUEST MAP / SHERPA) kept
+working throughout, because they are our buttons; that made graph mode look healthy and pointed
+four rounds of investigation at Coop, which had nothing to do with it. **A working control next
+to a broken one is not evidence the subsystem is fine** - check whose control it is.
 
-> Reported three ways over two sessions - "I can't go to any other main tab", "the Tasks tab
-> sticks so other tabs appear behind the QuestMap screens", and "it's still stuck on the tasks
-> tab after I click COOP". One defect, three framings, and the first framing sent two fixes
-> after an input-blocking rect that never existed.
+### Why the symptom looks like a dead button
 
-**The signal that does work** is EFT's own tab toggle. `ResolveNativeTabToggle` latches, at Mount
-and Resume, whichever tab under `Tab Bar/Tabs` is currently on - by definition Tasks, since that
-is the only reason the controller mounts - and `SyncSurfaceVisibility` mirrors it every frame.
-Latching by **state** rather than by the name "Tasks" keeps it locale- and build-independent;
-it must never be latched from the per-frame watch, where the selected tab may well be MAP.
+``ButtonFeedback`` (the click sound) and ``Tab`` (the behaviour) are separate components on the
+same GameObject. Unity resolves an event handler by walking for the first *enabled* behaviour
+that implements it, while still delivering to enabled siblings - so anything that stalls or
+disables ``Tab`` leaves the click audible and inert. "I can hear the click but nothing happens"
+therefore means the click was **delivered**; it never means the click was blocked.
 
-Every test in that watch is additive, so an EFT change degrades to today's behaviour rather
-than to a broken one: an unresolved toggle gates nothing. It also deliberately does **not**
-test a CanvasGroup alpha - the coordinator's anti-flicker veil drives alpha to 0 on this very
-screen during mount, so reading it would hide the surface while it is being built.
+### How to tell these apart in one line
 
-**Rule:** a screen's lifecycle patches tell you when the screen opens and closes, not when it
-stops being the visible one. For "is my content still what the player is looking at", read the
-native control that decides it.
+- ``EventSystem.RaycastAll`` at the real cursor position: is something of ours on top?
+- ``ExecuteEvents.GetEventHandler<IPointerClickHandler>``: who would Unity actually dispatch to?
+  This is the same resolution the input module uses, so its answer is authoritative.
 
-**Method rule, earned the hard way:** when a UI symptom survives two fixes, stop reading source
-and ask the runtime. One `EventSystem.RaycastAll` line disproved a week of plausible reasoning.
+Fire both on the real press, not on a synthetic probe at mount time - the surface keeps changing
+after mount, and a snapshot taken then proves nothing about a click made later.
+
+> **Status: the CanvasGroup fix is deployed but NOT yet confirmed in game.** The reasoning fits
+> every measurement - delivery confirmed, no exception anywhere, present in all modes, and
+> beginning the moment the surface mounts - but four previous explanations also fit what was
+> known at the time. ``QUESTMAP_M06_TABSTATE`` ships alongside it and names the handler and the
+> enabled flags on the next run either way. If it is still broken, ``ClearNativeOverlays``
+> deactivates ``_notesPart`` and ``_questItemsPart`` by the same mechanism and is the next
+> candidate.
 
 ## 2. `Destroy()` is deferred to the end of the frame — `SetActive(false)` first
 

@@ -119,6 +119,11 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private string? _selectedQuestId;
     private string? _viewStateScope;
     private bool _tasksPanelWasActive;
+    private CanvasGroup? _tasksPanelVeil;
+    private bool _tasksPanelVeilOwned;
+    private float _tasksPanelVeilAlpha = 1f;
+    private bool _tasksPanelVeilInteractable = true;
+    private bool _tasksPanelVeilBlocks = true;
     private bool _tasksDescriptionWasActive;
     private float _surfaceTopInset;
     private string _surfaceTopSource = "native-union";
@@ -396,7 +401,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         {
             var types = tab.GetComponents<Component>()
                 .Where(component => component != null)
-                .Select(component => component.GetType().Name);
+                .Select(component => component.GetType().FullName);
             QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TABTYPE tab={tab.name}; components={string.Join(",", types)}");
         }
     }
@@ -428,6 +433,57 @@ internal sealed class GlobalTasksScreenController : IDisposable
         QuestMapDebugLog.Info(Log,
             $"QUESTMAP_M06_CLICK mode={_mode}; phase={(down ? "down" : "up")}; " +
             $"pos={position.x:0},{position.y:0}; hits={hits.Count}; stack={string.Join(" | ", stack)}");
+        if (down && hits.Count > 0) LogTabInteractivity(hits[0].gameObject);
+    }
+
+    /// <summary>
+    /// Diagnostic: why a Character tab plays its click sound and then does nothing.
+    ///
+    /// Runs only for a press that landed inside EFT's tab strip. Three things are recorded, and
+    /// between them they cover every remaining explanation:
+    ///
+    /// - The handler Unity would dispatch to. <c>ExecuteEvents.GetEventHandler</c> is the same
+    ///   resolution the input module itself uses, so whatever it names is what receives the
+    ///   click. The Tab means delivery is fine and the fault is inside EFT's own handler; null
+    ///   means nothing is listening.
+    /// - Each component's enabled flag. ButtonFeedback and Tab are separate components, and
+    ///   Unity skips a disabled MonoBehaviour when resolving a handler while still delivering to
+    ///   its enabled siblings - so a disabled Tab is audible and inert.
+    /// - Any CanvasGroup above the tab. <c>interactable=false</c> suppresses the behaviour
+    ///   without suppressing the raycast, which looks identical from the player's chair.
+    /// </summary>
+    private void LogTabInteractivity(GameObject hit)
+    {
+        Transform? tab = null;
+        for (var current = hit.transform; current != null; current = current.parent)
+        {
+            if (current.parent == null || current.parent.name != "Tabs") continue;
+            tab = current;
+            break;
+        }
+        if (tab == null) return;
+
+        var components = tab.GetComponents<Component>()
+            .Where(component => component != null)
+            .Select(component => component is Behaviour behaviour
+                ? $"{behaviour.GetType().Name}:{(behaviour.enabled ? "on" : "OFF")}"
+                : component.GetType().Name);
+
+        var groups = new List<string>();
+        for (var current = tab; current != null; current = current.parent)
+        {
+            var group = current.GetComponent<CanvasGroup>();
+            if (group == null) continue;
+            groups.Add($"{current.name}[a={group.alpha:0.##};interactable={group.interactable};" +
+                       $"blocks={group.blocksRaycasts};ignoreParent={group.ignoreParentGroups}]");
+        }
+
+        var handler = ExecuteEvents.GetEventHandler<IPointerClickHandler>(hit);
+        QuestMapDebugLog.Info(Log,
+            $"QUESTMAP_M06_TABSTATE tab={tab.name}; active={tab.gameObject.activeInHierarchy}; " +
+            $"handler={(handler == null ? "none" : DescribeHierarchy(handler.transform))}; " +
+            $"components={string.Join(",", components)}; " +
+            $"groups={(groups.Count == 0 ? "none" : string.Join(" > ", groups))}");
     }
 
     /// <summary>
@@ -696,6 +752,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         {
             UnityEngine.Object.Destroy(ownedRoot.gameObject);
         }
+        UnveilNativeTasksPanel();
         if (_tasksPanel is not null)
         {
             _tasksPanel.gameObject.SetActive(_tasksPanelWasActive);
@@ -873,6 +930,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         {
             Log.LogError($"QUESTMAP_COOP_ERROR phase=rebuild; {exception}");
             Dispose();
+            UnveilNativeTasksPanel();
             _tasksPanel?.Show(InventoryController, QuestController, Session, _questsAdditionalFilter);
             if (_tasksPanel is not null) _tasksPanel.gameObject.SetActive(true);
         }
@@ -1296,6 +1354,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         {
             Log.LogError($"QUESTMAP_M06_ERROR phase=post-mount-rebuild; {exception}");
             Dispose();
+            UnveilNativeTasksPanel();
             _tasksPanel?.Show(InventoryController, QuestController, Session, _questsAdditionalFilter);
             if (_tasksPanel is not null) _tasksPanel.gameObject.SetActive(true);
             Log.LogWarning($"QUESTMAP_M06_STATE screen={_screen.GetInstanceID()}; active=False; safelyDisabled=True; reason=post-mount rebuild failed; vanillaRestored=True");
@@ -2570,10 +2629,66 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private void HideNativeTasksWorkspace()
     {
         _tasksPanel?.Close();
-        if (_tasksPanel is not null) _tasksPanel.gameObject.SetActive(false);
-        _tasksDescription?.SetActive(false);
+        VeilNativeTasksPanel();
         _screenTooltip?.Close();
         _tasksTooltip?.Close();
+    }
+
+    /// <summary>
+    /// Hides EFT's TasksPanel without deactivating its GameObject.
+    ///
+    /// <c>SetActive(false)</c> stops every coroutine on an object silently, with no exception,
+    /// and EFT's screen transitions run on those. With the panel deactivated, clicking any
+    /// Character tab played its click sound and then did nothing at all - in every mode, not
+    /// just Coop. QUESTMAP_M06_CLICK showed press and release both resolving to the tab, so the
+    /// click was delivered; the switch simply never completed and nothing was logged.
+    ///
+    /// A CanvasGroup hides it just as completely and leaves the lifecycle intact. The panel's
+    /// own <c>Close()</c> still runs first; this only takes away what Close leaves on screen.
+    /// <c>_tasksDescription</c> no longer needs deactivating either - it lives inside the panel,
+    /// so the veil covers it, and deactivating it carried the same coroutine risk.
+    /// </summary>
+    private void VeilNativeTasksPanel()
+    {
+        if (_tasksPanel is null || _tasksPanelVeil != null) return;
+        var group = _tasksPanel.gameObject.GetComponent<CanvasGroup>();
+        _tasksPanelVeilOwned = group == null;
+        if (group == null)
+        {
+            group = _tasksPanel.gameObject.AddComponent<CanvasGroup>();
+        }
+        else
+        {
+            _tasksPanelVeilAlpha = group.alpha;
+            _tasksPanelVeilInteractable = group.interactable;
+            _tasksPanelVeilBlocks = group.blocksRaycasts;
+        }
+        group.alpha = 0f;
+        group.interactable = false;
+        group.blocksRaycasts = false;
+        _tasksPanelVeil = group;
+    }
+
+    /// <summary>Puts the panel back exactly as it was found, component ownership included.</summary>
+    private void UnveilNativeTasksPanel()
+    {
+        if (_tasksPanelVeil == null)
+        {
+            _tasksPanelVeilOwned = false;
+            return;
+        }
+        if (_tasksPanelVeilOwned)
+        {
+            UnityEngine.Object.Destroy(_tasksPanelVeil);
+        }
+        else
+        {
+            _tasksPanelVeil.alpha = _tasksPanelVeilAlpha;
+            _tasksPanelVeil.interactable = _tasksPanelVeilInteractable;
+            _tasksPanelVeil.blocksRaycasts = _tasksPanelVeilBlocks;
+        }
+        _tasksPanelVeil = null;
+        _tasksPanelVeilOwned = false;
     }
 
     private RectTransform CreateFullSurfaceMount()
