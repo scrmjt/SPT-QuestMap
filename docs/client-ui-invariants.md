@@ -98,6 +98,40 @@ that implements it, while still delivering to enabled siblings - so anything tha
 disables ``Tab`` leaves the click audible and inert. "I can hear the click but nothing happens"
 therefore means the click was **delivered**; it never means the click was blocked.
 
+### EFT's tab guard, and how to read it
+
+Every Character-tab click goes to ``GClass3808.method_0`` (reached through ``Tab.action_0``,
+which always has exactly one subscriber). Four fields matter, and their meaning was established
+by comparing dumps taken while working against dumps taken while stuck:
+
+| Field | Meaning |
+| --- | --- |
+| ``Tab_2`` | the currently selected tab - it advances on every successful switch |
+| ``Bool_1`` | **the busy guard**: false when idle, true while a switch is in flight |
+| ``Tab_1`` | constant ``Gear`` in every sample; presumably the default tab |
+| ``Bool_0`` | constant ``True`` in every sample |
+
+``method_0`` has the usual shape: return if busy, set busy, start the transition, clear busy on
+completion. So a transition that begins and never finishes leaves ``Bool_1`` latched true, and
+from that moment the tab bar refuses every click **correctly** - the fault is upstream, in
+whatever stopped the transition finishing. A bottom-nav round trip tears the screen down and
+rebuilds this object, which is why it always "fixes" it.
+
+Working and stuck are trivially distinguishable:
+
+```
+working: Bool_0=True,Tab_1=Gear,Tab_2=Skills,Bool_1=False    <- Tab_2 advancing
+stuck:   Bool_0=True,Tab_1=Gear,Tab_2=Tasks,Bool_1=True      <- Tab_2 frozen, guard latched
+```
+
+``QUESTMAP_M06_TABGUARD`` logs this object's state the frame it changes, so the latching frame
+lands next to our own SUSPEND and RESUME lines. Grep that first: if ``Bool_1`` is true, stop
+looking at input, rects and handlers entirely - the click is being refused on purpose.
+
+**The timing that matters:** ``Suspend()`` is a postfix on ``TasksScreen.Close``, so EFT's close
+body has already returned while its transition is still running across later frames. Anything
+Suspend does to a native object lands *inside* a live transition.
+
 ### How to tell these apart in one line
 
 - ``EventSystem.RaycastAll`` at the real cursor position: is something of ours on top?

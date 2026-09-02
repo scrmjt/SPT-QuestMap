@@ -120,6 +120,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private string? _viewStateScope;
     private bool _tasksPanelWasActive;
     private readonly Dictionary<GameObject, NativeVeil> _nativeVeils = new();
+    private object? _tabOwner;
+    private string? _lastTabOwnerState;
     private bool _tasksDescriptionWasActive;
     private float _surfaceTopInset;
     private string _surfaceTopSource = "native-union";
@@ -323,6 +325,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         {
             SyncSurfaceVisibility();
             LogPointerPress();
+            LogTabOwnerChanges();
             yield return null;
         }
     }
@@ -501,6 +504,23 @@ internal sealed class GlobalTasksScreenController : IDisposable
     /// the simple fields of the object it is bound to, which is where a guard flag would live.
     /// One stuck dump against one working dump identifies the field that differs.
     /// </summary>
+    /// <summary>
+    /// Diagnostic: EFT's tab guard, logged the frame it changes.
+    ///
+    /// GClass3808.Bool_1 is the busy flag that gates every Character-tab click, and the bug is
+    /// that it latches true and never clears. Logging the owner's state on change puts the exact
+    /// latching frame next to our own SUSPEND and RESUME lines, which is what identifies whose
+    /// operation leaves the transition unfinished.
+    /// </summary>
+    private void LogTabOwnerChanges()
+    {
+        if (!QuestMapDebugLog.Enabled || _tabOwner is null) return;
+        var state = DescribeSimpleFields(_tabOwner);
+        if (state == _lastTabOwnerState) return;
+        _lastTabOwnerState = state;
+        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TABGUARD mode={_mode}; visible={_visible}; {state}");
+    }
+
     private void LogTabHandlerState(Component tab, string tabName)
     {
         foreach (var field in tab.GetType()
@@ -520,6 +540,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
             foreach (var subscriber in subscribers.GetInvocationList())
             {
                 var target = subscriber.Target;
+                // Cache it once so the per-frame watch can report the guard without re-reflecting.
+                _tabOwner ??= target;
                 QuestMapDebugLog.Info(Log,
                     $"QUESTMAP_M06_TABOWNER tab={tabName}; field={field.Name}; " +
                     $"method={subscriber.Method.DeclaringType?.Name}.{subscriber.Method.Name}; " +
@@ -2557,8 +2579,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _overlayMode = GlobalOverlayMode.None;
         _notesToggle?.SetIsOnWithoutNotify(false);
         _questItemsToggle?.SetIsOnWithoutNotify(false);
-        if (_notesPart is not null) _notesPart.gameObject.SetActive(false);
-        if (_questItemsPart is not null) _questItemsPart.gameObject.SetActive(false);
+        SetNativeOverlayVisible(_notesPart, false);
+        SetNativeOverlayVisible(_questItemsPart, false);
         if (_notesBackdrop is not null) _notesBackdrop.gameObject.SetActive(false);
         if (_questItemsBackdrop is not null) _questItemsBackdrop.gameObject.SetActive(false);
         _detailPane?.Hide();
@@ -2584,8 +2606,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
         // both native toggles and roots explicitly after invoking EFT's opener.
         _notesToggle.SetIsOnWithoutNotify(mode == GlobalOverlayMode.Notes);
         _questItemsToggle.SetIsOnWithoutNotify(mode == GlobalOverlayMode.QuestItems);
-        _notesPart.gameObject.SetActive(mode == GlobalOverlayMode.Notes);
-        _questItemsPart.gameObject.SetActive(mode == GlobalOverlayMode.QuestItems);
+        SetNativeOverlayVisible(_notesPart, mode == GlobalOverlayMode.Notes);
+        SetNativeOverlayVisible(_questItemsPart, mode == GlobalOverlayMode.QuestItems);
         if (_notesBackdrop is not null) _notesBackdrop.gameObject.SetActive(mode == GlobalOverlayMode.Notes);
         if (_questItemsBackdrop is not null) _questItemsBackdrop.gameObject.SetActive(mode == GlobalOverlayMode.QuestItems);
         if (mode != GlobalOverlayMode.QuestDescription) _detailPane?.Hide();
@@ -2779,16 +2801,62 @@ internal sealed class GlobalTasksScreenController : IDisposable
         public bool BlocksRaycasts { get; }
     }
 
+    /// <summary>
+    /// Shows or hides one of EFT's side panels without ever deactivating it.
+    ///
+    /// <see cref="ClearNativeOverlays"/> runs inside <see cref="Suspend"/>, which is a postfix on
+    /// <c>TasksScreen.Close</c> - EFT's close body has returned by then, but its tab transition
+    /// is still in flight across later frames. Deactivating a GameObject kills the coroutines on
+    /// it silently, and that is how the transition stopped signalling completion: EFT's guard
+    /// (GClass3808.Bool_1) latched true and the tab bar then refused every click, correctly,
+    /// forever. Reversible here because the Notes and Quest Items buttons really do show and
+    /// hide these panels.
+    /// </summary>
+    private void SetNativeOverlayVisible(RectTransform? panel, bool visible)
+    {
+        if (panel == null) return;
+        if (visible) Unveil(panel.gameObject); else Veil(panel.gameObject);
+    }
+
     private void Veil(GameObject? target)
     {
-        if (target == null || _nativeVeils.ContainsKey(target)) return;
+        var veil = EnsureVeil(target);
+        if (veil is null) return;
+        veil.Value.Group.alpha = 0f;
+        veil.Value.Group.interactable = false;
+        veil.Value.Group.blocksRaycasts = false;
+    }
+
+    /// <summary>Lifts the veil on one object, restoring exactly what was found on it.</summary>
+    private void Unveil(GameObject? target)
+    {
+        if (target == null || !_nativeVeils.TryGetValue(target, out var veil)) return;
+        if (veil.Group == null) return;
+        veil.Group.alpha = veil.Alpha;
+        veil.Group.interactable = veil.Interactable;
+        veil.Group.blocksRaycasts = veil.BlocksRaycasts;
+    }
+
+    /// <summary>
+    /// The CanvasGroup used to hide a native object, created at most once per object.
+    ///
+    /// The entry deliberately outlives an <see cref="Unveil"/>: the overlay panels are shown and
+    /// hidden repeatedly, and destroying the component on every hide would be unsafe because
+    /// Destroy is deferred to the end of the frame (invariant 2) - a hide, show and hide within
+    /// one frame would find the component already queued for destruction. Only the values move
+    /// during normal use; anything we added is destroyed once, at dispose.
+    /// </summary>
+    private NativeVeil? EnsureVeil(GameObject? target)
+    {
+        if (target == null) return null;
+        if (_nativeVeils.TryGetValue(target, out var existing))
+            return existing.Group == null ? null : existing;
         var group = target.GetComponent<CanvasGroup>();
         var owned = group == null;
         if (group == null) group = target.AddComponent<CanvasGroup>();
-        _nativeVeils[target] = new NativeVeil(group, owned);
-        group.alpha = 0f;
-        group.interactable = false;
-        group.blocksRaycasts = false;
+        var veil = new NativeVeil(group, owned);
+        _nativeVeils[target] = veil;
+        return veil;
     }
 
     /// <summary>Puts every veiled object back as it was found, component ownership included.</summary>
