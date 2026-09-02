@@ -23,6 +23,29 @@ a Unity UI change as *working*; report it as built and deployed, and say what is
 
 ---
 
+## Confirmed fixed (2026-09-02)
+
+**The Character tab lock.** With QuestMap open, clicking MAP / ACHIEVEMENTS / PRESTIGE played the
+click sound and did nothing. Confirmed fixed in game by the user after eight test cycles.
+
+Cause: ``RebuildCoopView`` disposed the graph view without clearing the nine chrome fields
+pointing into it, so ``_questItemsWarningBadge`` referenced a destroyed GameObject. Unity's fake
+null let ``is not null`` pass and ``SetActive`` threw inside ``Suspend()`` - which is a **prefix**
+on ``TasksScreen.Close``, so the throw skipped EFT's close body and stranded its tab transition
+with the guard latched. EFT swallowed the exception, so nothing ever reached the log.
+
+Also renamed the co-op tab to **SHERPA** (display string only - the enum stays ``Coop``), and
+fixed the picker placeholder that survived its own rebuild.
+
+Full account, diagnostic ladder and log markers: [debugging-native-ui.md](debugging-native-ui.md).
+It is the single most useful thing to have come out of this work - read it before investigating
+anything inside EFT's own UI.
+
+**Debug logging is still enabled** in ``BepInEx/config/com.rootdarkarchon.sptquestmap.client.cfg``.
+Turn it off when the current round of in-game work is done.
+
+---
+
 ## Needs the user's eyes
 
 These are done, deployed, and **unconfirmed on screen**:
