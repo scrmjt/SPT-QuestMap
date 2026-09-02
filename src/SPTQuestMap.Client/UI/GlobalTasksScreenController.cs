@@ -122,6 +122,8 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private readonly Dictionary<GameObject, NativeVeil> _nativeVeils = new();
     private object? _tabOwner;
     private string? _lastTabOwnerState;
+    private static Harmony? _tabHandlerProbe;
+    private static ManualLogSource? _tabHandlerLog;
     private bool _tasksDescriptionWasActive;
     private float _surfaceTopInset;
     private string _surfaceTopSource = "native-union";
@@ -208,7 +210,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         ResolveNativeTabToggle();
         _surfaceVisibilityWatch = _coroutineOwner.StartCoroutine(WatchNativeScreenVisibility());
         QuestMapDebugLog.Info(Log,
-            "QUESTMAP_M06_MOUNT " +
+            $"QUESTMAP_M06_MOUNT f={Time.frameCount}; " +
             $"screen={_screen.GetInstanceID()}; mode={_mode}; nodes={_projection?.Nodes.Count ?? 0}; " +
             $"edges={_projection?.Edges.Count ?? 0}; nativeNotes=True; nativeQuestItems=True; fullSurface=True; nativeSelectorsUnmodified=True; " +
             $"raidInProgressOnly={_raidInProgressOnly}; favoriteQuestService=native; assetCache=shared; cachedAssets={_assetCache.CachedCount}; " +
@@ -288,7 +290,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         UpdateQuestItemsButtonState();
         var cachedRows = (_graphView as InProgressQuestTableView)?.CachedRowCount ?? 0;
         QuestMapDebugLog.Info(Log,
-            "QUESTMAP_M06_RESUME " +
+            $"QUESTMAP_M06_RESUME f={Time.frameCount}; " +
             $"screen={_screen.GetInstanceID()}; topologyChanged={topologyChanged}; modeChanged={modeChanged}; runtimeContextChanged={runtimeContextChanged}; " +
             $"mode={_mode}; cachedRows={cachedRows}; rootReused={!topologyChanged && !modeChanged}");
         return topologyChanged || modeChanged ? "global-content-rebuilt" : "global-screen-reused";
@@ -430,7 +432,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         for (var index = 0; index < hits.Count && index < 3; index++)
             stack.Add(DescribeHierarchy(hits[index].gameObject.transform));
         QuestMapDebugLog.Info(Log,
-            $"QUESTMAP_M06_CLICK mode={_mode}; phase={(down ? "down" : "up")}; " +
+            $"QUESTMAP_M06_CLICK f={Time.frameCount}; mode={_mode}; phase={(down ? "down" : "up")}; " +
             $"pos={position.x:0},{position.y:0}; hits={hits.Count}; stack={string.Join(" | ", stack)}");
         if (down && hits.Count > 0) LogTabInteractivity(hits[0].gameObject);
     }
@@ -518,7 +520,61 @@ internal sealed class GlobalTasksScreenController : IDisposable
         var state = DescribeSimpleFields(_tabOwner);
         if (state == _lastTabOwnerState) return;
         _lastTabOwnerState = state;
-        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TABGUARD mode={_mode}; visible={_visible}; {state}");
+        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_TABGUARD f={Time.frameCount}; mode={_mode}; visible={_visible}; {state}");
+    }
+
+    /// <summary>
+    /// Diagnostic: wraps EFT's tab-click handler so every invocation is visible.
+    ///
+    /// The guard latches with no SUSPEND anywhere near it, so EFT's transition stalls before it
+    /// ever closes the Tasks screen - which puts the failure inside this method rather than in
+    /// anything this controller does afterwards. Nothing outside the handler can separate "never
+    /// called", "called and correctly refused because the guard was already set", and "called,
+    /// set the guard, then threw". Entry, the guard before and after, and a finalizer cover all
+    /// three.
+    ///
+    /// The finalizer returns void, so the original exception propagates untouched - this
+    /// observes, it does not swallow. Installed once per session and left in place: unpatching on
+    /// Dispose would remove it for every later screen, and it is inert when debug logging is off.
+    /// </summary>
+    private void InstallTabHandlerProbe(MethodInfo method)
+    {
+        if (_tabHandlerProbe != null || !QuestMapDebugLog.Enabled) return;
+        _tabHandlerLog = Log;
+        try
+        {
+            var probe = new Harmony("com.sptquestmap.client.tabhandler.probe");
+            probe.Patch(method,
+                prefix: new HarmonyMethod(AccessTools.Method(
+                    typeof(GlobalTasksScreenController), nameof(TabHandlerEnter))),
+                finalizer: new HarmonyMethod(AccessTools.Method(
+                    typeof(GlobalTasksScreenController), nameof(TabHandlerExit))));
+            _tabHandlerProbe = probe;
+            QuestMapDebugLog.Info(Log,
+                $"QUESTMAP_M06_PROBE installed={method.DeclaringType?.Name}.{method.Name}");
+        }
+        catch (Exception exception)
+        {
+            _tabHandlerProbe = null;
+            Log.LogWarning($"QUESTMAP_M06_PROBE failed={exception.Message}");
+        }
+    }
+
+    private static void TabHandlerEnter(object __instance)
+    {
+        if (_tabHandlerLog == null) return;
+        QuestMapDebugLog.Info(_tabHandlerLog,
+            $"QUESTMAP_M06_HANDLER f={Time.frameCount}; phase=enter; {DescribeSimpleFields(__instance)}");
+    }
+
+    private static void TabHandlerExit(object __instance, Exception? __exception)
+    {
+        if (_tabHandlerLog == null) return;
+        QuestMapDebugLog.Info(_tabHandlerLog,
+            $"QUESTMAP_M06_HANDLER f={Time.frameCount}; phase=exit; " +
+            $"threw={(__exception == null ? "no" : __exception.GetType().Name)}; " +
+            $"{DescribeSimpleFields(__instance)}");
+        if (__exception != null) _tabHandlerLog.LogError($"QUESTMAP_M06_HANDLER_EXCEPTION {__exception}");
     }
 
     private void LogTabHandlerState(Component tab, string tabName)
@@ -542,6 +598,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
                 var target = subscriber.Target;
                 // Cache it once so the per-frame watch can report the guard without re-reflecting.
                 _tabOwner ??= target;
+                InstallTabHandlerProbe(subscriber.Method);
                 QuestMapDebugLog.Info(Log,
                     $"QUESTMAP_M06_TABOWNER tab={tabName}; field={field.Name}; " +
                     $"method={subscriber.Method.DeclaringType?.Name}.{subscriber.Method.Name}; " +
@@ -675,6 +732,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
     public void Suspend()
     {
         if (_disposed || !_mounted || !_visible) return;
+        LogNativeOp("suspend.enter", "TasksScreen.Close postfix");
         PersistCurrentState();
         QuestGraphViewStateStore.Flush();
         ClearNativeOverlays();
@@ -686,7 +744,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _visible = false;
         UnsubscribeInventoryUpdates();
         var cachedRows = (_graphView as InProgressQuestTableView)?.CachedRowCount ?? 0;
-        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_SUSPEND screen={_screen.GetInstanceID()}; cached=True; rows={cachedRows}");
+        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_SUSPEND f={Time.frameCount}; cached=True; rows={cachedRows}");
     }
 
     public string RefreshOverlay(QuestProfileOverlay overlay, bool refreshAllNativeControls = true)
@@ -912,7 +970,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
             _graphView.Root.gameObject.SetActive(true);
             if (CustomDetailsEnabled && _selectedQuestId is not null) ShowSelectedQuestDetails();
         }
-        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_VIEW screen={_screen.GetInstanceID()}; view={mode}; native=False");
+        QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_VIEW f={Time.frameCount}; view={mode}; native=False");
         LogTabStripHitTest(mode);
     }
 
@@ -2461,6 +2519,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
             ?? throw new InvalidOperationException($"TasksScreen.{field.Name} was not a Component.");
         var branch = owner.gameObject;
         _nativeControlStates.TryAdd(branch, branch.activeSelf);
+        LogNativeOp("setActive(false)", branch.name);
         branch.SetActive(false);
     }
 
@@ -2576,6 +2635,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
 
     private void ClearNativeOverlays()
     {
+        LogNativeOp("clearNativeOverlays", "notes+questItems+backdrops");
         _overlayMode = GlobalOverlayMode.None;
         _notesToggle?.SetIsOnWithoutNotify(false);
         _questItemsToggle?.SetIsOnWithoutNotify(false);
@@ -2750,8 +2810,25 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _inventoryUpdatesSubscribed = false;
     }
 
+    /// <summary>
+    /// Records anything this controller does to an object EFT owns.
+    ///
+    /// Five hypotheses in a row were unfalsifiable because our operations and EFT's tab guard
+    /// were never on a shared timeline. Every call here is frame-stamped, so the frame the guard
+    /// latches can be read directly against what we did in that frame - or against nothing at
+    /// all, which rules this controller out rather than leaving it merely unproven.
+    /// </summary>
+    private void LogNativeOp(string operation, string target)
+    {
+        if (!QuestMapDebugLog.Enabled) return;
+        QuestMapDebugLog.Info(Log,
+            $"QUESTMAP_M06_NATIVEOP f={Time.frameCount}; op={operation}; target={target}; " +
+            $"mode={_mode}; visible={_visible}");
+    }
+
     private void HideNativeTasksWorkspace()
     {
+        LogNativeOp("tasksPanel.Close", "TasksPanel");
         _tasksPanel?.Close();
         VeilNativeTasksPanel();
         _screenTooltip?.Close();
@@ -2779,6 +2856,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         // cover it, and it bled through both the Tasks list and the Sherpa view when this was
         // assumed rather than checked.
         Veil(_tasksDescription);
+        LogNativeOp("tooltips.Close", "screenTooltip+tasksTooltip");
     }
 
     /// <summary>What a veiled object looked like before we touched it.</summary>
@@ -2822,6 +2900,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
     {
         var veil = EnsureVeil(target);
         if (veil is null) return;
+        LogNativeOp("veil", target == null ? "null" : target.name);
         veil.Value.Group.alpha = 0f;
         veil.Value.Group.interactable = false;
         veil.Value.Group.blocksRaycasts = false;
@@ -2832,6 +2911,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
     {
         if (target == null || !_nativeVeils.TryGetValue(target, out var veil)) return;
         if (veil.Group == null) return;
+        LogNativeOp("unveil", target.name);
         veil.Group.alpha = veil.Alpha;
         veil.Group.interactable = veil.Interactable;
         veil.Group.blocksRaycasts = veil.BlocksRaycasts;
