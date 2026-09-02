@@ -926,15 +926,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
         _coopView?.Dispose();
         _coopView = null;
         _coopPickerChips.Clear();
-        _selectionSummary = null;
-        _selectionSummaryText = null;
-        _notesButtonImage = null;
-        _questItemsButtonImage = null;
-        _questItemsButtonLabel = null;
-        _questItemsWarningBadge = null;
-        _questItemsWarningCount = null;
-        _questDescriptionButtonImage = null;
-        _questDescriptionButton = null;
+        ClearGraphChromeReferences();
         RestoreNativeSidePanelLayout();
         foreach (var ownedRoot in _screen == null
                      ? Array.Empty<RectTransform>()
@@ -1096,6 +1088,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
             _detailPane = null;
             _graphView?.Dispose();
             _graphView = null;
+            ClearGraphChromeReferences();
             _coopView?.Dispose();
             _coopView = null;
             _coopPickerChips.Clear();
@@ -1534,6 +1527,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
             _detailPane = null;
             _graphView?.Dispose();
             _graphView = null;
+            ClearGraphChromeReferences();
             // The Coop root carries its own copy of the tab bar, so leaving it alive here made
             // its tabs show through from behind the newly built Tasks list.
             _coopView?.Dispose();
@@ -2707,10 +2701,10 @@ internal sealed class GlobalTasksScreenController : IDisposable
 
     private void UpdateOverlayButtons()
     {
-        if (_notesButtonImage is not null)
+        if (_notesButtonImage != null)
             _notesButtonImage.color = _overlayMode == GlobalOverlayMode.Notes ? QuestGraphPalette.ControlActive : QuestGraphPalette.Control;
         UpdateQuestItemsButtonState();
-        if (_questDescriptionButtonImage is not null)
+        if (_questDescriptionButtonImage != null)
             _questDescriptionButtonImage.color = _overlayMode == GlobalOverlayMode.QuestDescription
                 ? QuestGraphPalette.ControlActive
                 : QuestGraphPalette.Control;
@@ -2765,13 +2759,45 @@ internal sealed class GlobalTasksScreenController : IDisposable
         UpdateQuestItemsButtonState();
     }
 
+    /// <summary>
+    /// Drops every reference to a control that lived inside the graph view's chrome.
+    ///
+    /// Disposing that view destroys those GameObjects, but a destroyed UnityEngine.Object is only
+    /// "fake null": the C# patterns <c>is null</c> and <c>?.</c> test the CLR reference and see a
+    /// live object, so a stale field sails past them and throws on first use. Only <c>== null</c>
+    /// consults Unity's overloaded operator.
+    ///
+    /// This cost a long hunt. <see cref="RebuildCoopView"/> disposed the graph view without
+    /// clearing these, so switching to the Sherpa view left the warning badge pointing at a
+    /// destroyed object; the next <see cref="Suspend"/> threw inside
+    /// <see cref="UpdateQuestItemsButtonState"/>. Suspend is a PREFIX on TasksScreen.Close, so
+    /// that exception skipped EFT's close body, stranded its tab transition and latched the
+    /// Character tab bar - and EFT swallowed the exception, so nothing appeared in the log.
+    /// Calling this wherever the owning view is disposed is what removes the trap; the
+    /// <c>== null</c> guards below are the second line of defence.
+    /// </summary>
+    private void ClearGraphChromeReferences()
+    {
+        _selectionSummary = null;
+        _selectionSummaryText = null;
+        _notesButtonImage = null;
+        _questItemsButtonImage = null;
+        _questItemsButtonLabel = null;
+        _questItemsWarningBadge = null;
+        _questItemsWarningCount = null;
+        _questDescriptionButtonImage = null;
+        _questDescriptionButton = null;
+    }
+
     private void UpdateQuestItemsButtonState()
     {
-        if (_questItemsButtonImage is null) return;
+        // == null, not `is null`: these are Unity objects, and only the overloaded operator
+        // reports a destroyed one as null. See ClearGraphChromeReferences.
+        if (_questItemsButtonImage == null) return;
         var count = GetCarriedQuestItemCount();
         var warning = count > 0;
-        if (_questItemsWarningBadge is not null) _questItemsWarningBadge.SetActive(warning);
-        if (_questItemsWarningCount is not null) _questItemsWarningCount.text = count.ToString();
+        if (_questItemsWarningBadge != null) _questItemsWarningBadge.SetActive(warning);
+        if (_questItemsWarningCount != null) _questItemsWarningCount.text = count.ToString();
         _questItemsButtonImage.color = warning
             ? (_overlayMode == GlobalOverlayMode.QuestItems
                 ? QuestGraphPalette.WarningControlActive

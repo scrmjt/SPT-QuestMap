@@ -62,103 +62,49 @@ to match would strand every saved setting, per the rule above, so it stays `Coop
 means grepping for a tab by its on-screen label will miss it. Start from
 `GlobalQuestGraphMode` and `BuildModeTabs` instead.
 
-## 1d. Never deactivate a native GameObject you only want to hide
+## 1d. Four rules for touching EFT's own UI
 
-**Do not call ``SetActive(false)`` on one of EFT's own objects to hide it.** Deactivating stops
-every coroutine running on that object - silently, no exception, no log line - and EFT's screen
-transitions run on those. Hide it with a CanvasGroup (``alpha = 0``, ``interactable = false``,
-``blocksRaycasts = false``) and leave the object active. ``VeilNativeTasksPanel`` does this for
-TasksPanel and restores whatever was there on dispose, removing the component again if it added
-one.
+All four came out of one bug: clicking a Character tab played its click sound and did nothing.
+The full account, the diagnostic ladder and the log markers are in
+[debugging-native-ui.md](debugging-native-ui.md) - read that before investigating anything
+similar. The rules themselves:
 
-### The bug this came from, and how long it took to find
+**A Harmony prefix must not throw.** ``Suspend()`` is a prefix on ``TasksScreen.Close``
+(``PatchRegistration`` wires ``ClosePrefix``). A throwing prefix means the body it precedes never
+runs, so EFT's tab transition was stranded with its guard latched and the Character tab bar
+refused every click until the screen was rebuilt. **EFT swallows what comes back out of a patch**,
+so nothing reached the Unity log. Wrap any prefix body in a try/catch that logs and contains -
+``QuestScreenCoordinator.CloseGlobalTasksScreen`` is the worked example.
 
-Symptom: with QuestMap open, clicking a Character tab (MAP / ACHIEVEMENTS / PRESTIGE) played the
-tab's click sound and then did nothing. Four fixes missed, each built on a premise the next log
-disproved. The premises, and what actually killed them:
+**Never ``SetActive(false)`` a native GameObject you only want to hide.** Deactivating stops every
+coroutine on the object, silently and with no exception, and EFT's screen transitions run on
+those. Hide it with a CanvasGroup - ``alpha = 0``, ``interactable = false``,
+``blocksRaycasts = false`` - and leave it active. ``Veil`` / ``Unveil`` do this, and deliberately
+do not destroy the CanvasGroup between cycles because Destroy is deferred to end of frame
+(see [2](#2-destroy-is-deferred-to-the-end-of-the-frame--setactivefalse-first)).
 
-| Premise | Disproved by |
-| --- | --- |
-| A decorative Image was swallowing the click | ``EventSystem.RaycastAll`` over the strip returned EFT's own MAP tab as topmost |
-| ``Close`` fires, so ``Suspend`` can hide the surface | SUSPEND appears only for bottom-nav changes, never a top-tab switch |
-| The screen deactivates, so ``activeInHierarchy`` can gate it | Screen stays active; and ``rootUnderScreen=True``, so deactivation would have sufficed had it happened |
-| EFT's tabs are Toggles whose state can be latched | All eight logged ``?`` - they are EFT ``Tab`` components, not Unity Toggles |
-| **The bug is Coop-specific** | ``QUESTMAP_M06_CLICK`` caught MAP and ACHIEVEMENTS being clicked in **Full** mode with no switch either |
+**Clear references when the view that owns them is disposed.** This is the primary defence, ahead
+of any null-check style: a field set to ``null`` cannot be a corpse. ``RebuildCoopView`` disposed
+the graph view without clearing the nine chrome fields pointing into it, which is what put a
+destroyed GameObject behind ``_questItemsWarningBadge``. ``ClearGraphChromeReferences()`` exists
+for this and must be called at **every** site that disposes ``_graphView``.
 
-That last row is the expensive one. Our own header tabs (TASKS / QUEST MAP / SHERPA) kept
-working throughout, because they are our buttons; that made graph mode look healthy and pointed
-four rounds of investigation at Coop, which had nothing to do with it. **A working control next
-to a broken one is not evidence the subsystem is fine** - check whose control it is.
+**Use ``== null`` on a Unity object, never ``is null``.** A destroyed ``UnityEngine.Object`` is
+*fake null*: only the overloaded operator reports it as null, while ``is null``, ``is not null``,
+``?.`` and ``??`` test the CLR reference and see a live object. That is exactly how
+``if (_questItemsWarningBadge is not null) _questItemsWarningBadge.SetActive(warning);`` threw.
+Roughly 300 pattern-style null tests remain under ``UI/`` - most are benign because their targets
+are never destroyed while referenced, but convert any field that outlives a view:
 
-### Why the symptom looks like a dead button
-
-``ButtonFeedback`` (the click sound) and ``Tab`` (the behaviour) are separate components on the
-same GameObject. Unity resolves an event handler by walking for the first *enabled* behaviour
-that implements it, while still delivering to enabled siblings - so anything that stalls or
-disables ``Tab`` leaves the click audible and inert. "I can hear the click but nothing happens"
-therefore means the click was **delivered**; it never means the click was blocked.
-
-### EFT's tab guard, and how to read it
-
-Every Character-tab click goes to ``GClass3808.method_0`` (reached through ``Tab.action_0``,
-which always has exactly one subscriber). Four fields matter, and their meaning was established
-by comparing dumps taken while working against dumps taken while stuck:
-
-| Field | Meaning |
-| --- | --- |
-| ``Tab_2`` | the currently selected tab - it advances on every successful switch |
-| ``Bool_1`` | **the busy guard**: false when idle, true while a switch is in flight |
-| ``Tab_1`` | constant ``Gear`` in every sample; presumably the default tab |
-| ``Bool_0`` | constant ``True`` in every sample |
-
-``method_0`` has the usual shape: return if busy, set busy, start the transition, clear busy on
-completion. So a transition that begins and never finishes leaves ``Bool_1`` latched true, and
-from that moment the tab bar refuses every click **correctly** - the fault is upstream, in
-whatever stopped the transition finishing. A bottom-nav round trip tears the screen down and
-rebuilds this object, which is why it always "fixes" it.
-
-Working and stuck are trivially distinguishable:
-
-```
-working: Bool_0=True,Tab_1=Gear,Tab_2=Skills,Bool_1=False    <- Tab_2 advancing
-stuck:   Bool_0=True,Tab_1=Gear,Tab_2=Tasks,Bool_1=True      <- Tab_2 frozen, guard latched
+```bash
+grep -rn "is not null\|is null" src/SPTQuestMap.Client/UI/
 ```
 
-``QUESTMAP_M06_TABGUARD`` logs this object's state the frame it changes, so the latching frame
-lands next to our own SUSPEND and RESUME lines. Grep that first: if ``Bool_1`` is true, stop
-looking at input, rects and handlers entirely - the click is being refused on purpose.
-
-**The timing that matters, and it is the whole bug:** ``Suspend()`` is a **prefix** on
-``TasksScreen.Close`` (``PatchRegistration`` wires ``ClosePrefix``), so it runs *before* EFT's own
-close body. Throwing there skips that body entirely - the transition's close step never happens,
-``Bool_1`` is never cleared, and the tab bar refuses every click until the screen is rebuilt.
-
-Worse, **EFT swallows whatever comes back out of the prefix**, so nothing reaches the Unity log.
-Five rounds of hunting for an exception found none because there is none to find unless we catch
-it ourselves. ``QuestScreenCoordinator.CloseGlobalTasksScreen`` now wraps the ``Suspend()`` call
-and logs as ``QUESTMAP_M06_SUSPEND_FAILED``, containing the exception rather than rethrowing -
-letting it through is what did the damage.
-
-**Rule:** a Harmony prefix on a game method is inside that method's contract. It must not throw,
-because the body it precedes will simply not run. Wrap the whole of any prefix body in a
-try/catch that logs and contains.
-
-### How to tell these apart in one line
-
-- ``EventSystem.RaycastAll`` at the real cursor position: is something of ours on top?
-- ``ExecuteEvents.GetEventHandler<IPointerClickHandler>``: who would Unity actually dispatch to?
-  This is the same resolution the input module uses, so its answer is authoritative.
-
-Fire both on the real press, not on a synthetic probe at mount time - the surface keeps changing
-after mount, and a snapshot taken then proves nothing about a click made later.
-
-> **Status: the CanvasGroup fix is deployed but NOT yet confirmed in game.** The reasoning fits
-> every measurement - delivery confirmed, no exception anywhere, present in all modes, and
-> beginning the moment the surface mounts - but four previous explanations also fit what was
-> known at the time. ``QUESTMAP_M06_TABSTATE`` ships alongside it and names the handler and the
-> enabled flags on the next run either way. If it is still broken, ``ClearNativeOverlays``
-> deactivates ``_notesPart`` and ``_questItemsPart`` by the same mechanism and is the next
-> candidate.
+**Recognising it:** "I can hear the click but nothing happens" always means the click was
+*delivered* - ``ButtonFeedback`` and ``Tab`` are separate components, and Unity skips a disabled
+behaviour while still delivering to its enabled siblings. It never means the click was blocked.
+Grep ``QUESTMAP_M06_TABGUARD``: if ``Bool_1`` is true, the tab bar is refusing on purpose and the
+fault is whatever stopped the previous transition finishing.
 
 ## 2. `Destroy()` is deferred to the end of the frame — `SetActive(false)` first
 

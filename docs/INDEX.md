@@ -19,6 +19,7 @@ Files are marked:
 | --- | --- |
 | changing **any** UI | invoke the skill **`questmap-ui`** (`<repo>/.claude/skills/questmap-ui/SKILL.md`) |
 | editing the **Unity/BepInEx** UI | + `client-ui-invariants.md` |
+| **a native EFT control stops responding**, or any bug inside EFT's own UI | `debugging-native-ui.md` — **before** changing code |
 | editing the **Blazor** UI | + `web-ui-invariants.md` |
 | changing **rules, filters, rankings, catch-up, series, objectives** | `domain-rules.md` |
 | working on the **client↔server protocol** or client data flow | `bepinex-client-notes.md` |
@@ -41,6 +42,7 @@ If none of these match, the question is probably answered by the code. Grep firs
 | `roadmap.md` | 7 K | Work not yet started, with the open questions each item needs answered. Headline item: seeing a co-op partner's quests in raid. |
 | `domain-rules.md` | 11 K | Quest-state, filter, ranking, series and objective rules that must not be "simplified" back. Covers both UIs. |
 | `client-ui-invariants.md` | 13 K | Unity rules that compile fine and fail on screen. Read before touching `SPTQuestMap.Client/UI/`. |
+| `debugging-native-ui.md` | 9 K | Playbook for bugs inside EFT's own UI: the diagnostic ladder, the `QUESTMAP_M06_*` markers and what each answers, EFT's tab-bar internals, and the seven wrong fixes that produced it. |
 | `web-ui-invariants.md` | 7 K | Blazor/CSS/Razor equivalents. Read before touching `SPTQuestMap/Presentation/`. |
 | `bepinex-client-notes.md` | 28 K | How the plugin gets data from the server, what compare mode costs in-game, worked-out findings §1–§5f. Sectioned — read the section, not the file. |
 | `client-localization.md` | 3 K | Embedded JSON catalogs, and the CRLF / trailing-comma hazards. |
