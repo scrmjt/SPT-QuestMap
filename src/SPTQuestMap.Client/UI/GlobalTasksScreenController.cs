@@ -487,7 +487,45 @@ internal sealed class GlobalTasksScreenController : IDisposable
             var name = component.GetType().Name;
             if (name is not ("Tab" or "TabElement")) continue;
             QuestMapDebugLog.Info(Log,
-                $"QUESTMAP_M06_TABFIELDS tab={tab.name}; component={name}; {DescribeTabInternals(component)}");
+                $"QUESTMAP_M06_TABFIELDS tab={tab.name}; component={name}; {DescribeSimpleFields(component)}");
+            if (name == "Tab") LogTabHandlerState(component, tab.name);
+        }
+    }
+
+    /// <summary>
+    /// Diagnostic: EFT's own handler for a tab click, and the state it decides on.
+    ///
+    /// The tab is exonerated - <c>action_0</c> has one subscriber and <c>Interactable</c> is true
+    /// in the stuck state and the working state alike - so the refusal happens inside whatever
+    /// that delegate points at. This names the handler's declaring type and method, then dumps
+    /// the simple fields of the object it is bound to, which is where a guard flag would live.
+    /// One stuck dump against one working dump identifies the field that differs.
+    /// </summary>
+    private void LogTabHandlerState(Component tab, string tabName)
+    {
+        foreach (var field in tab.GetType()
+                     .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            object? value;
+            try
+            {
+                value = field.GetValue(tab);
+            }
+            catch
+            {
+                continue;
+            }
+            if (value is not Delegate subscribers) continue;
+
+            foreach (var subscriber in subscribers.GetInvocationList())
+            {
+                var target = subscriber.Target;
+                QuestMapDebugLog.Info(Log,
+                    $"QUESTMAP_M06_TABOWNER tab={tabName}; field={field.Name}; " +
+                    $"method={subscriber.Method.DeclaringType?.Name}.{subscriber.Method.Name}; " +
+                    $"target={(target == null ? "static" : target.GetType().Name)}; " +
+                    $"state={(target == null ? "none" : DescribeSimpleFields(target))}");
+            }
         }
     }
 
@@ -503,16 +541,23 @@ internal sealed class GlobalTasksScreenController : IDisposable
     ///
     /// Reflection over a live object only - nothing here reads or decompiles an assembly.
     /// </summary>
-    private static string DescribeTabInternals(Component component)
+    private static string DescribeSimpleFields(object instance)
     {
+        // Enough to carry any plausible guard flag, capped so one line stays greppable.
+        const int maxFields = 70;
         var parts = new List<string>();
-        foreach (var field in component.GetType()
+        foreach (var field in instance.GetType()
                      .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
         {
+            if (parts.Count >= maxFields)
+            {
+                parts.Add("...");
+                break;
+            }
             object? value;
             try
             {
-                value = field.GetValue(component);
+                value = field.GetValue(instance);
             }
             catch
             {
@@ -529,6 +574,10 @@ internal sealed class GlobalTasksScreenController : IDisposable
                     break;
                 case UnityEngine.Events.UnityEventBase unityEvent:
                     parts.Add($"{field.Name}={unityEvent.GetPersistentEventCount()}persistent");
+                    break;
+                case UnityEngine.Object unityObject:
+                    // Name only: a Unity object's fields are its own subtree, not this one's state.
+                    parts.Add($"{field.Name}={unityObject.name}");
                     break;
                 default:
                     if (field.FieldType.IsPrimitive || field.FieldType.IsEnum || value is string)
