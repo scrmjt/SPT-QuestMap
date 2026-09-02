@@ -119,11 +119,7 @@ internal sealed class GlobalTasksScreenController : IDisposable
     private string? _selectedQuestId;
     private string? _viewStateScope;
     private bool _tasksPanelWasActive;
-    private CanvasGroup? _tasksPanelVeil;
-    private bool _tasksPanelVeilOwned;
-    private float _tasksPanelVeilAlpha = 1f;
-    private bool _tasksPanelVeilInteractable = true;
-    private bool _tasksPanelVeilBlocks = true;
+    private readonly Dictionary<GameObject, NativeVeil> _nativeVeils = new();
     private bool _tasksDescriptionWasActive;
     private float _surfaceTopInset;
     private string _surfaceTopSource = "native-union";
@@ -484,6 +480,63 @@ internal sealed class GlobalTasksScreenController : IDisposable
             $"handler={(handler == null ? "none" : DescribeHierarchy(handler.transform))}; " +
             $"components={string.Join(",", components)}; " +
             $"groups={(groups.Count == 0 ? "none" : string.Join(" > ", groups))}");
+
+        foreach (var component in tab.GetComponents<Component>())
+        {
+            if (component == null) continue;
+            var name = component.GetType().Name;
+            if (name is not ("Tab" or "TabElement")) continue;
+            QuestMapDebugLog.Info(Log,
+                $"QUESTMAP_M06_TABFIELDS tab={tab.name}; component={name}; {DescribeTabInternals(component)}");
+        }
+    }
+
+    /// <summary>
+    /// Diagnostic: EFT's own state on a tab component, read by reflection.
+    ///
+    /// Unity's input layer reports the stuck and working states identically - same resolved
+    /// handler, same enabled flags, same CanvasGroups - so whatever differs is inside EFT. The
+    /// shape that fits is a lost subscription: if InventoryScreen stops listening to a tab's
+    /// click and never re-subscribes, the tab still plays its sound through ButtonFeedback and
+    /// does nothing at all. Delegates are therefore reported by invocation count, which shows
+    /// that outright; everything simple is reported by value.
+    ///
+    /// Reflection over a live object only - nothing here reads or decompiles an assembly.
+    /// </summary>
+    private static string DescribeTabInternals(Component component)
+    {
+        var parts = new List<string>();
+        foreach (var field in component.GetType()
+                     .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            object? value;
+            try
+            {
+                value = field.GetValue(component);
+            }
+            catch
+            {
+                continue;
+            }
+
+            switch (value)
+            {
+                case null:
+                    parts.Add($"{field.Name}=null");
+                    break;
+                case Delegate subscribers:
+                    parts.Add($"{field.Name}={subscribers.GetInvocationList().Length}subs");
+                    break;
+                case UnityEngine.Events.UnityEventBase unityEvent:
+                    parts.Add($"{field.Name}={unityEvent.GetPersistentEventCount()}persistent");
+                    break;
+                default:
+                    if (field.FieldType.IsPrimitive || field.FieldType.IsEnum || value is string)
+                        parts.Add($"{field.Name}={value}");
+                    break;
+            }
+        }
+        return string.Join(",", parts);
     }
 
     /// <summary>
@@ -2650,45 +2703,61 @@ internal sealed class GlobalTasksScreenController : IDisposable
     /// </summary>
     private void VeilNativeTasksPanel()
     {
-        if (_tasksPanel is null || _tasksPanelVeil != null) return;
-        var group = _tasksPanel.gameObject.GetComponent<CanvasGroup>();
-        _tasksPanelVeilOwned = group == null;
-        if (group == null)
+        Veil(_tasksPanel == null ? null : _tasksPanel.gameObject);
+        // Not a child of TasksPanel, despite the field living on it: veiling the panel does not
+        // cover it, and it bled through both the Tasks list and the Sherpa view when this was
+        // assumed rather than checked.
+        Veil(_tasksDescription);
+    }
+
+    /// <summary>What a veiled object looked like before we touched it.</summary>
+    private readonly struct NativeVeil
+    {
+        public NativeVeil(CanvasGroup group, bool owned)
         {
-            group = _tasksPanel.gameObject.AddComponent<CanvasGroup>();
+            Group = group;
+            Owned = owned;
+            Alpha = group.alpha;
+            Interactable = group.interactable;
+            BlocksRaycasts = group.blocksRaycasts;
         }
-        else
-        {
-            _tasksPanelVeilAlpha = group.alpha;
-            _tasksPanelVeilInteractable = group.interactable;
-            _tasksPanelVeilBlocks = group.blocksRaycasts;
-        }
+
+        public CanvasGroup Group { get; }
+        /// <summary>True when we added the CanvasGroup, so it is ours to destroy again.</summary>
+        public bool Owned { get; }
+        public float Alpha { get; }
+        public bool Interactable { get; }
+        public bool BlocksRaycasts { get; }
+    }
+
+    private void Veil(GameObject? target)
+    {
+        if (target == null || _nativeVeils.ContainsKey(target)) return;
+        var group = target.GetComponent<CanvasGroup>();
+        var owned = group == null;
+        if (group == null) group = target.AddComponent<CanvasGroup>();
+        _nativeVeils[target] = new NativeVeil(group, owned);
         group.alpha = 0f;
         group.interactable = false;
         group.blocksRaycasts = false;
-        _tasksPanelVeil = group;
     }
 
-    /// <summary>Puts the panel back exactly as it was found, component ownership included.</summary>
+    /// <summary>Puts every veiled object back as it was found, component ownership included.</summary>
     private void UnveilNativeTasksPanel()
     {
-        if (_tasksPanelVeil == null)
+        foreach (var veil in _nativeVeils.Values)
         {
-            _tasksPanelVeilOwned = false;
-            return;
+            if (veil.Group == null) continue;
+            if (veil.Owned)
+            {
+                UnityEngine.Object.Destroy(veil.Group);
+                continue;
+            }
+            veil.Group.alpha = veil.Alpha;
+            veil.Group.interactable = veil.Interactable;
+            veil.Group.blocksRaycasts = veil.BlocksRaycasts;
         }
-        if (_tasksPanelVeilOwned)
-        {
-            UnityEngine.Object.Destroy(_tasksPanelVeil);
-        }
-        else
-        {
-            _tasksPanelVeil.alpha = _tasksPanelVeilAlpha;
-            _tasksPanelVeil.interactable = _tasksPanelVeilInteractable;
-            _tasksPanelVeil.blocksRaycasts = _tasksPanelVeilBlocks;
-        }
-        _tasksPanelVeil = null;
-        _tasksPanelVeilOwned = false;
+        _nativeVeils.Clear();
     }
 
     private RectTransform CreateFullSurfaceMount()
