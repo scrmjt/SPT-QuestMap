@@ -245,7 +245,23 @@ internal sealed class QuestScreenCoordinator : IDisposable
         }
         RevealVeil();
 
-        if (_globalControllers.TryGetValue(screen, out var controller)) controller.Suspend();
+        // Suspend runs as a PREFIX on TasksScreen.Close, so an exception here skips EFT's own
+        // close body and strands its tab transition - the Character tab bar then refuses every
+        // click until the screen is rebuilt. EFT swallows whatever comes back out of the prefix,
+        // so nothing reaches the Unity log; catching it here is the only way it is ever seen.
+        // Logged and contained rather than rethrown: letting it through is what caused the
+        // damage in the first place.
+        if (_globalControllers.TryGetValue(screen, out var controller))
+        {
+            try
+            {
+                controller.Suspend();
+            }
+            catch (System.Exception exception)
+            {
+                _log.LogError($"QUESTMAP_M06_SUSPEND_FAILED {exception}");
+            }
+        }
         ReleaseInventoryMonitoringIfInactive();
     }
 

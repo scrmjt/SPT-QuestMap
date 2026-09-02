@@ -732,17 +732,27 @@ internal sealed class GlobalTasksScreenController : IDisposable
     public void Suspend()
     {
         if (_disposed || !_mounted || !_visible) return;
-        LogNativeOp("suspend.enter", "TasksScreen.Close postfix");
+        // PREFIX on TasksScreen.Close, not a postfix: everything below runs BEFORE EFT's own
+        // close body. Throwing here skips that body entirely, which leaves EFT's tab transition
+        // half-done and its guard latched - the tab bar then refuses every click for good.
+        LogNativeOp("suspend.enter", "TasksScreen.Close prefix");
         PersistCurrentState();
+        LogNativeOp("suspend.step", "persisted");
         QuestGraphViewStateStore.Flush();
+        LogNativeOp("suspend.step", "flushed");
         ClearNativeOverlays();
+        LogNativeOp("suspend.step", "overlaysCleared");
         _detailPane?.Dispose();
         _detailPane = null;
+        LogNativeOp("suspend.step", "detailPaneDisposed");
         if (_graphView is InProgressQuestTableView table) table.ReleaseNativeRuntimeBindings(false);
+        LogNativeOp("suspend.step", "runtimeBindingsReleased");
         if (_graphView?.Root != null) _graphView.Root.gameObject.SetActive(false);
         if (_coopView?.Root != null) _coopView.Root.gameObject.SetActive(false);
+        LogNativeOp("suspend.step", "rootsHidden");
         _visible = false;
         UnsubscribeInventoryUpdates();
+        LogNativeOp("suspend.step", "unsubscribed");
         var cachedRows = (_graphView as InProgressQuestTableView)?.CachedRowCount ?? 0;
         QuestMapDebugLog.Info(Log, $"QUESTMAP_M06_SUSPEND f={Time.frameCount}; cached=True; rows={cachedRows}");
     }
@@ -2643,8 +2653,11 @@ internal sealed class GlobalTasksScreenController : IDisposable
         SetNativeOverlayVisible(_questItemsPart, false);
         if (_notesBackdrop is not null) _notesBackdrop.gameObject.SetActive(false);
         if (_questItemsBackdrop is not null) _questItemsBackdrop.gameObject.SetActive(false);
+        LogNativeOp("overlays.step", "backdropsHidden");
         _detailPane?.Hide();
+        LogNativeOp("overlays.step", "detailPaneHidden");
         UpdateOverlayButtons();
+        LogNativeOp("overlays.step", "buttonsUpdated");
     }
 
     private void ApplyOverlayMode(GlobalOverlayMode mode, bool invokeNative)

@@ -128,9 +128,20 @@ stuck:   Bool_0=True,Tab_1=Gear,Tab_2=Tasks,Bool_1=True      <- Tab_2 frozen, gu
 lands next to our own SUSPEND and RESUME lines. Grep that first: if ``Bool_1`` is true, stop
 looking at input, rects and handlers entirely - the click is being refused on purpose.
 
-**The timing that matters:** ``Suspend()`` is a postfix on ``TasksScreen.Close``, so EFT's close
-body has already returned while its transition is still running across later frames. Anything
-Suspend does to a native object lands *inside* a live transition.
+**The timing that matters, and it is the whole bug:** ``Suspend()`` is a **prefix** on
+``TasksScreen.Close`` (``PatchRegistration`` wires ``ClosePrefix``), so it runs *before* EFT's own
+close body. Throwing there skips that body entirely - the transition's close step never happens,
+``Bool_1`` is never cleared, and the tab bar refuses every click until the screen is rebuilt.
+
+Worse, **EFT swallows whatever comes back out of the prefix**, so nothing reaches the Unity log.
+Five rounds of hunting for an exception found none because there is none to find unless we catch
+it ourselves. ``QuestScreenCoordinator.CloseGlobalTasksScreen`` now wraps the ``Suspend()`` call
+and logs as ``QUESTMAP_M06_SUSPEND_FAILED``, containing the exception rather than rethrowing -
+letting it through is what did the damage.
+
+**Rule:** a Harmony prefix on a game method is inside that method's contract. It must not throw,
+because the body it precedes will simply not run. Wrap the whole of any prefix body in a
+try/catch that logs and contains.
 
 ### How to tell these apart in one line
 
